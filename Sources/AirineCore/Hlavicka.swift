@@ -158,7 +158,7 @@ public struct Hlavicka: Sendable, Equatable {
     /// Hodnota v uvozovkách: u `"…"` escapy (`\"`, `\\`, `\n`, `\t`), u `'…'`
     /// zdvojený apostrof. Prostý text bez komentáře za ` #`.
     static func odUvozovek(_ s: String) -> String {
-        let t = s.trimmingCharacters(in: .whitespaces)
+        let t = bezKomentareZaUvozovkami(s.trimmingCharacters(in: .whitespaces))
         if t.count >= 2, t.hasPrefix("\""), t.hasSuffix("\"") {
             var r = "", esc = false
             for ch in t.dropFirst().dropLast() {
@@ -173,6 +173,23 @@ public struct Hlavicka: Sendable, Equatable {
             return t.dropFirst().dropLast().replacingOccurrences(of: "''", with: "'")
         }
         if let k = t.range(of: " #") { return String(t[..<k.lowerBound]).trimmingCharacters(in: .whitespaces) }
+        return t
+    }
+
+    /// `"…" # poznámka` → `"…"`: komentář za uzavírací uvozovkou do hodnoty nepatří.
+    static func bezKomentareZaUvozovkami(_ t: String) -> String {
+        guard let q = t.first, q == "\"" || q == "'" else { return t }
+        let znaky = Array(t)
+        var i = 1
+        while i < znaky.count {
+            if q == "\"" && znaky[i] == "\\" { i += 2; continue }
+            if znaky[i] == q {
+                if q == "'" && i + 1 < znaky.count && znaky[i + 1] == "'" { i += 2; continue }
+                let zbytek = String(znaky[(i + 1)...]).trimmingCharacters(in: .whitespaces)
+                return zbytek.isEmpty || zbytek.hasPrefix("#") ? String(znaky[...i]) : t
+            }
+            i += 1
+        }
         return t
     }
 

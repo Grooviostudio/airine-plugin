@@ -440,16 +440,23 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
 /// Sdílená sada s parsujHlavicku() na serveru (lib/katalog.js): obě strany
 /// musí z téže hlavičky vyčíst totéž, jinak server hlásí falešný nesoulad.
 @Suite struct HlavickaFixtureTests {
-    struct Pripad: Decodable { let nazev: String; let hlavicka: String; let description: String; let name: String?; let id: String?; let typ: String? }
+    struct Pripad: Decodable {
+        let nazev: String; let hlavicka: String; let description: String?
+        let name, id, typ, popis: String?; let fakta: [String: String]?
+    }
 
     @Test func sadaHlavicek() throws {
         let url = try #require(Bundle.module.url(forResource: "hlavicky", withExtension: "json", subdirectory: "Fixtures"))
         for p in try JSONDecoder().decode([Pripad].self, from: Data(contentsOf: url)) {
-            let h = Hlavicka.precti("---\n\(p.hlavicka)\n---\ntělo\n")
+            // Případ může nést celý soubor i s oddělovači, nebo jen blok hlavičky.
+            let h = Hlavicka.precti(p.hlavicka.hasPrefix("---\n") ? p.hlavicka : "---\n\(p.hlavicka)\n---\ntělo\n")
+            let k = h.karta(skillSouborem: false)
             #expect(h.nahore["description"] == p.description, "\(p.nazev)")
             if let n = p.name { #expect(h.nahore["name"] == n, "\(p.nazev)") }
             if let i = p.id { #expect(h.airine["id"] == i, "\(p.nazev)") }
             if let t = p.typ { #expect(h.airine["typ"] == t, "\(p.nazev)") }
+            if let o = p.popis { #expect(k.popis == o, "\(p.nazev)") }
+            if let f = p.fakta { #expect(k.fakta == f, "\(p.nazev)") }
         }
     }
 }
