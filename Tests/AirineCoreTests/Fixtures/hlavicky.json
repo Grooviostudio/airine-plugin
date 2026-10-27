@@ -8,5 +8,5 @@
   {"nazev": "jednoduche-uvozovky", "hlavicka": "name: a\ndescription: 'it''s fine'", "description": "it's fine"},
   {"nazev": "komentar", "hlavicka": "name: a # jméno\ndescription: text", "description": "text", "name": "a"},
   {"nazev": "airine-popis-folded", "hlavicka": "name: brief-web\nairine:\n  id: k1\n  popis: >\n    Zadání webu\n    pro pekárnu.\n  typ: brief\n  fakta:\n    termín: 15. 12. 2026\n    rozpočet: \"180 000 Kč\" # s mezerou\n", "description": null, "id": "k1", "typ": "brief", "popis": "Zadání webu pro pekárnu.", "fakta": {"termín": "15. 12. 2026", "rozpočet": "180 000 Kč"}},
-  {"nazev": "airine-popis-literal-mezi-klici", "hlavicka": "---\nairine:\n  popis: |\n    první\n\n    druhý\n\n  typ: postup\n---\n# Text", "description": null, "typ": "postup", "popis": "první\n\ndruhý"}
+  {"nazev": "airine-popis-literal-mezi-klici", "hlavicka": "airine:\n  popis: |\n    první\n\n    druhý\n\n  typ: postup", "description": null, "typ": "postup", "popis": "první\n\ndruhý"}
 ]

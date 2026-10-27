@@ -448,8 +448,7 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
     @Test func sadaHlavicek() throws {
         let url = try #require(Bundle.module.url(forResource: "hlavicky", withExtension: "json", subdirectory: "Fixtures"))
         for p in try JSONDecoder().decode([Pripad].self, from: Data(contentsOf: url)) {
-            // Případ může nést celý soubor i s oddělovači, nebo jen blok hlavičky.
-            let h = Hlavicka.precti(p.hlavicka.hasPrefix("---\n") ? p.hlavicka : "---\n\(p.hlavicka)\n---\ntělo\n")
+            let h = Hlavicka.precti("---\n\(p.hlavicka)\n---\ntělo\n")
             let k = h.karta(skillSouborem: false)
             #expect(h.nahore["description"] == p.description, "\(p.nazev)")
             if let n = p.name { #expect(h.nahore["name"] == n, "\(p.nazev)") }
