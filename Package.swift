@@ -15,6 +15,6 @@ let package = Package(
         .target(name: "AirineCore", linkerSettings: [.linkedLibrary("sqlite3")]),
         .executableTarget(name: "airine", dependencies: ["AirineCore"]),
         .executableTarget(name: "AirineLista", dependencies: ["AirineCore"]),
-        .testTarget(name: "AirineCoreTests", dependencies: ["AirineCore"]),
+        .testTarget(name: "AirineCoreTests", dependencies: ["AirineCore"], resources: [.copy("Fixtures")]),
     ]
 )

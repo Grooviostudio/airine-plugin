@@ -5,11 +5,10 @@ import Foundation
 /// takže funguje i při výpadku Airine; hlášení jde do fronty.
 public final class MistniMcp: @unchecked Sendable {
     let kopie: Kopie
-    let zarizeni: String
     let synchronizuj: (@Sendable () async -> Void)?
 
-    public init(kopie: Kopie, zarizeni: String, synchronizuj: (@Sendable () async -> Void)? = nil) {
-        self.kopie = kopie; self.zarizeni = zarizeni; self.synchronizuj = synchronizuj
+    public init(kopie: Kopie, synchronizuj: (@Sendable () async -> Void)? = nil) {
+        self.kopie = kopie; self.synchronizuj = synchronizuj
     }
 
     nonisolated(unsafe) static let nastroje: [[String: Any]] = [
@@ -69,7 +68,7 @@ public final class MistniMcp: @unchecked Sendable {
             return try Doporuceni(kopie: kopie, projekt: projekt).text(fronta: kopie.fronta().count)
         case "nahlas_soubor":
             guard let cesta = arg["cesta"] as? String else { return "Chybí cesta." }
-            let v = try Nahlasovani(kopie: kopie, zarizeni: zarizeni).nahlas(cesta: cesta)
+            let v = try Nahlasovani(kopie: kopie).nahlas(cesta: cesta)
             if case .zarazeno = v { await synchronizuj?() }
             switch v {
             case .zarazeno(let id, _):
@@ -80,6 +79,7 @@ public final class MistniMcp: @unchecked Sendable {
                 return t
             case .beze_zmeny: return "Beze změny od posledního hlášení."
             case .preskoceno(let proc): return "Nehlásím: \(proc)."
+            case .bezKarty: return v.proAgenta ?? ""
             }
         default:
             throw NSError(domain: "airine", code: 1, userInfo: [NSLocalizedDescriptionKey: "neznámý nástroj \(jmeno)"])

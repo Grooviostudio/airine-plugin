@@ -1,0 +1,10 @@
+[
+  {"nazev": "folded", "hlavicka": "name: nabidka\ndescription: >\n  Píše nabídky\n  pro klienty.\n\n  Druhý odstavec.\nmetadata:\n  airine-id: s1", "description": "Píše nabídky pro klienty.\nDruhý odstavec.", "id": "s1"},
+  {"nazev": "folded-strip", "hlavicka": "name: a\ndescription: >-\n  jedna\n  dvě\n", "description": "jedna dvě"},
+  {"nazev": "literal", "hlavicka": "name: a\ndescription: |\n  řádek 1\n  řádek 2\n\nairine:\n  typ: brief", "description": "řádek 1\nřádek 2", "typ": "brief"},
+  {"nazev": "literal-strip", "hlavicka": "name: a\ndescription: |-\n  x\n    odsazené\n", "description": "x\n  odsazené"},
+  {"nazev": "plain-pokracovani", "hlavicka": "name: a\ndescription: Použij, když\n  agent píše brief.\nairine:\n  typ: brief", "description": "Použij, když agent píše brief.", "typ": "brief"},
+  {"nazev": "dvojite-uvozovky", "hlavicka": "name: a\ndescription: \"Říká \\\"ano\\\" a \\\\ lomítko\"", "description": "Říká \"ano\" a \\ lomítko"},
+  {"nazev": "jednoduche-uvozovky", "hlavicka": "name: a\ndescription: 'it''s fine'", "description": "it's fine"},
+  {"nazev": "komentar", "hlavicka": "name: a # jméno\ndescription: text", "description": "text", "name": "a"}
+]

@@ -13,9 +13,20 @@ public struct Doporuceni: Sendable {
 
     public init(kopie: Kopie, projekt: String?) throws {
         self.projekt = projekt
-        let vse = try kopie.karty().filter { projekt == nil || $0.projekt_id == projekt }
-        platne = vse.filter { $0.bez_prava != true && $0.platna }.sorted { ($0.zmeneno ?? "") > ($1.zmeneno ?? "") }
-        nahrazene = vse.filter { $0.bez_prava != true && !$0.platna }
+        let vsechny = try kopie.karty()
+        // Server „nahrazeno“ neposílá: karta je nahrazená, když na ni jiná živá
+        // karta ukazuje přes nahrazuje (stejně jako `doporuceni()` v lib/katalog.js).
+        let nahrazenaId = Set(vsechny.filter { $0.bez_prava != true }.compactMap(\.nahrazuje))
+        // Jako server: k projektu patří i karty bez projektu u jeho klienta.
+        // Klienta projektu plugin pozná z vlastních karet (contact_id kterékoli
+        // karty s tím projektem); bez takové karty klientské karty vynechá.
+        let klient = projekt.flatMap { p in vsechny.first { $0.projekt_id == p && $0.klient_id != nil }?.klient_id }
+        let vse = vsechny.filter {
+            projekt == nil || $0.projekt_id == projekt || ($0.projekt_id == nil && klient != nil && $0.klient_id == klient)
+        }
+        platne = vse.filter { $0.bez_prava != true && !nahrazenaId.contains($0.id) }
+            .sorted { ($0.updated_at ?? "") > ($1.updated_at ?? "") }
+        nahrazene = vse.filter { $0.bez_prava != true && nahrazenaId.contains($0.id) }
         bezPrava = vse.filter { $0.bez_prava == true }
         stavK = kopie.posledniSynchronizace
         navod = kopie.navod
@@ -35,18 +46,19 @@ public struct Doporuceni: Sendable {
         }
         if platne.isEmpty { r.append("K projektu zatím nic nahlášeného.") }
         for k in platne.prefix(40) {
-            var radek = "- \(k.name)"
+            var radek = "- \(k.name ?? k.id)"
             if let t = k.typ { radek += " [\(t)]" }
             if let p = k.popis { radek += ": \(p.prefix(300))" }
             r.append(radek)
-            if let n = k.nahrazuje, let stara = nahrazene.first(where: { $0.id == n }) { r.append("  nahrazuje \(stara.name), starou verzi nepoužívat") }
-            if let f = k.fakta, !f.isEmpty { r.append("  " + f.map { "\($0.klic): \($0.hodnota)" }.joined(separator: ", ")) }
-            if k.rozpor == true { r.append("  ⚠ dvě verze v rozporu, rozhodne \(k.vlastnik_jmeno ?? k.vlastnik ?? "vlastník")") }
-            if k.jenNaZarizeni { r.append("  ⚠ leží jen na jednom počítači, kolegové ho nevidí") }
-            if let m = k.mista?.first(where: { $0.druh == "zarizeni" })?.cesta { r.append("  \(m)") }
+            if let n = k.nahrazuje, let stara = nahrazene.first(where: { $0.id == n }) { r.append("  nahrazuje \(stara.name ?? stara.id), starou verzi nepoužívat") }
+            if let f = k.fakta, !f.isEmpty { r.append("  " + f.sorted { $0.key < $1.key }.map { "\($0.key): \($0.value)" }.joined(separator: ", ")) }
+            if k.rozpor == true { r.append("  ⚠ dvě verze v rozporu, rozhodne \(k.vlastnik_jmeno ?? "vlastník")") }
+            if k.jenNaJednomZarizeni { r.append("  ⚠ leží jen na jednom počítači, kolegové ho nevidí") }
+            if k.neniVAirine { r.append("  obsah zatím není v Airine, jen karta") }
+            if let m = k.mista?.first?.cesta { r.append("  \(m)") }
         }
         if platne.count > 40 { r.append("… a dalších \(platne.count - 40), vypíše `airine doporuceni --vse`") }
-        for k in bezPrava.prefix(10) { r.append("- \(k.name): bez přístupu, požádej o něj \(k.vlastnik_jmeno ?? k.vlastnik ?? "vlastníka")") }
+        for k in bezPrava.prefix(10) { r.append("- \(k.name ?? "soubor"): bez přístupu, požádej o něj \(k.vlastnik_jmeno ?? "vlastníka")") }
         if fronta > 0 { r.append("Čeká na odeslání do Airine: \(fronta) hlášení.") }
         if let n = navod { r.append("\n## Návod firmy pro agenty (verze \(n.verze))\n\(n.obsah)") }
         return r.joined(separator: "\n")

@@ -139,14 +139,13 @@ public final class Kopie: @unchecked Sendable {
         try db.proved("UPDATE fronta SET odmitnuto = ? WHERE klic = ?", [.blob(try zasifruj(o)), .text("\(h.id):\(h.otisk)")])
     }
 
-    /// Po novém uuid zařízení musí čekající hlášení nést nové místo.
-    public func prepisZarizeni(_ nove: String) throws {
-        for p in try fronta(vcetneOdmitnutych: true) {
-            var h = p.hlaseni
-            if h.misto.zarizeni == nove { continue }
-            h.misto.zarizeni = nove
-            try db.proved("UPDATE fronta SET data = ? WHERE klic = ?", [.blob(try zasifruj(h)), .text("\(h.id):\(h.otisk)")])
-        }
+    /// Server uložil verzi v rozporu. Než přijde kanál změn, ať to doporučení
+    /// ukáže hned; `otisk` je platná verze serveru, na kterou má další hlášení navázat.
+    public func oznacRozpor(_ id: String, otisk: String?) throws {
+        guard var k = try karta(id) else { return }
+        k.rozpor = true
+        if let otisk { k.otisk = otisk }
+        try ulozKarty([k])
     }
 
     /// Karta smazaná v Airine: zmizí z kopie i fronty a plugin ji znovu nehlásí.

@@ -95,7 +95,7 @@ case "stav":
     print("Poslední synchronizace: \(kopie.posledniSynchronizace.map { "\($0)" } ?? "nikdy")")
     print("Karet v kopii: \((try? kopie.karty().count) ?? 0)  ve frontě: \(f.filter { $0.odmitnuto == nil }.count)")
     for p in f where p.odmitnuto != nil {
-        print("Odmítnuto \(p.hlaseni.misto.cesta ?? p.hlaseni.id): " + p.odmitnuto!.chyby.map { "\($0.pole) \($0.zprava)" }.joined(separator: "; "))
+        print("Odmítnuto \(p.hlaseni.cesta ?? p.hlaseni.id): " + p.odmitnuto!.chyby.map { "\($0.pole) \($0.zprava)" }.joined(separator: "; "))
     }
 
 case "propoj":
@@ -135,9 +135,14 @@ case "nahlas":
     guard let cesta else { if hook { exit(0) }; chyba("airine nahlas <cesta>") }
     let (kopie, n) = otevri()
     do {
-        let v = try Nahlasovani(kopie: kopie, zarizeni: n.zarizeni).nahlas(cesta: cesta)
+        let v = try Nahlasovani(kopie: kopie).nahlas(cesta: cesta)
         if case .zarazeno = v, api(n) != nil { synchronizujNaPozadi() }
-        if !hook { print(v) }
+        if hook, let t = v.proAgenta {
+            // Claude Code dá text agentovi; ten hlavičku doplní, plugin soubor nepřepisuje.
+            let o: [String: Any] = ["hookSpecificOutput": ["hookEventName": "PostToolUse", "additionalContext": t]]
+            print(String(decoding: try! JSONSerialization.data(withJSONObject: o), as: UTF8.self))
+        }
+        if !hook { print(v.proAgenta ?? "\(v)") }
     } catch {
         // Hook nikdy neblokuje práci agenta; chyba jde jen do stderr.
         FileHandle.standardError.write(Data("airine: \(error)\n".utf8))
@@ -146,14 +151,14 @@ case "nahlas":
 
 case "vyres":
     guard let id = argumenty.first else { chyba("airine vyres <id>") }
-    let (kopie, n) = otevri()
-    do { try Nahlasovani(kopie: kopie, zarizeni: n.zarizeni).vyresRozpor(id: id) } catch { chyba("\(error)") }
+    let (kopie, _) = otevri()
+    do { try Nahlasovani(kopie: kopie).vyresRozpor(id: id) } catch { chyba("\(error)") }
     print("Další hlášení \(id) naváže na verzi v Airine. Ulož sloučený soubor znovu.")
 
 case "mcp":
-    let (kopie, n) = otevri()
+    let (kopie, _) = otevri()
     let d = domov
-    let server = MistniMcp(kopie: kopie, zarizeni: n.zarizeni, synchronizuj: token().map { t in
+    let server = MistniMcp(kopie: kopie, synchronizuj: token().map { t in
         { @Sendable in _ = try? await Synchronizace.spust(domov: d, kopie: kopie) { HttpAirine(nastaveni: $0, token: t) } }
     })
     while let radek = readLine(strippingNewline: true) {

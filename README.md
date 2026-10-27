@@ -13,7 +13,12 @@ a skills po změně nahlásí do katalogu Airine. Funguje i bez spojení.
   počítači, otisk (SHA-256), počet řádků a velikost, a název počítače. Tělo souboru neposílá.
 - Místní kopie katalogu je v `~/Library/Application Support/Airine`, každý řádek
   šifrovaný (AES-GCM). Klíč i osobní token jsou v Klíčence.
-- Když soubor nemá v hlavičce `airine.id`, plugin ho doplní (u `SKILL.md` do `metadata.airine-id`).
+- Soubor se hlásí, jen když má v hlavičce jméno (malá písmena a pomlčky), popis a typ.
+  V bloku `airine:` mají `name` a `popis` přednost před `name` a `description` nahoře, typ je
+  `airine.typ`. U skillu (`SKILL.md` nebo `metadata.airine-id`) platí `name` a `description`
+  nahoře a typ je `skill`. Pravidlo je stejné jako na serveru. Jinak plugin soubor nehlásí
+  a agentovi řekne, co doplnit, i s návrhem jména. Hlavičku za něj nepíše.
+- Když úplná hlavička nemá `airine.id`, plugin ho doplní (u `SKILL.md` do `metadata.airine-id`).
   Jinak soubor nemění.
 - Nic neměří a nedělá snímky obrazovky.
 

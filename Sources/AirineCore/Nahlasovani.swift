@@ -4,9 +4,8 @@ import Foundation
 /// síti — volá se z hooku po úpravě souboru a musí doběhnout hned.
 public struct Nahlasovani: Sendable {
     let kopie: Kopie
-    let zarizeni: String
 
-    public init(kopie: Kopie, zarizeni: String) { self.kopie = kopie; self.zarizeni = zarizeni }
+    public init(kopie: Kopie) { self.kopie = kopie }
 
     /// Které soubory se hlásí: MD a skills. Ostatní hook tiše přeskočí.
     public static func hlasitelny(_ cesta: String) -> Bool {
@@ -18,6 +17,37 @@ public struct Nahlasovani: Sendable {
         case zarazeno(id: String, otisk: String)
         case beze_zmeny
         case preskoceno(String)
+        /// Hlavičce chybí, bez čeho server kartu nepřijme (name, typ, popis).
+        /// Plugin nic nehlásí ani nepíše; doplní to agent nebo člověk.
+        case bezKarty(chybi: [String], navrhJmena: String?)
+
+        /// Text pro agenta: co doplnit do hlavičky, aby soubor dostal kartu.
+        public var proAgenta: String? {
+            guard case .bezKarty(let chybi, let navrh) = self else { return nil }
+            var t = "Airine: soubor zatím nemá kartu, v hlavičce (front matter) chybí: \(chybi.joined(separator: ", "))."
+            if let navrh { t += " Návrh jména: name: \(navrh)" }
+            return t + " Doplň hlavičku a soubor ulož, plugin ho pak nahlásí."
+        }
+    }
+
+    /// Jméno karty podle pravidla serveru: `^[a-z0-9]+(-[a-z0-9]+)*$`, nejvýš
+    /// 64 znaků, bez diakritiky. Jen návrh do hlavičky, do hlášení nikdy
+    /// (jméno je identita karty a nesmí se rozejít s hlavičkou).
+    public static func kebab(_ s: String) -> String? {
+        let bez = s.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "en"))
+            .lowercased()
+        var r = "", pomlcka = false
+        for ch in bez.unicodeScalars {
+            if ("a"..."z").contains(ch) || ("0"..."9").contains(ch) { r.unicodeScalars.append(ch); pomlcka = false }
+            else if !pomlcka && !r.isEmpty { r += "-"; pomlcka = true }
+        }
+        while r.hasSuffix("-") { r.removeLast() }
+        if r.count > 64 { r = String(r.prefix(64)); while r.hasSuffix("-") { r.removeLast() } }
+        return r.isEmpty ? nil : r
+    }
+
+    static func jePlatneJmeno(_ s: String) -> Bool {
+        s.count <= 64 && s.range(of: "^[a-z0-9]+(-[a-z0-9]+)*$", options: .regularExpression) != nil
     }
 
     /// `doplnId`: když hlavička nemá trvalé id, plugin ho vygeneruje a zapíše
@@ -32,7 +62,19 @@ public struct Nahlasovani: Sendable {
         let skill = url.lastPathComponent == "SKILL.md"
 
         var h = Hlavicka.precti(obsah)
-        var id = h.airine["id"]
+        // Server bez jména, typu a popisu kartu nepřijme (u SKILL.md je typ
+        // `skill`). Takový soubor se nehlásí a nedostane ani id.
+        let pole = h.karta(skillSouborem: skill)
+        let jmeno = pole.name
+        var chybi: [String] = []
+        if jmeno.map(Self.jePlatneJmeno) != true { chybi.append("name") }
+        if pole.typ == nil { chybi.append("airine.typ") }
+        if (pole.popis ?? "").trimmingCharacters(in: .whitespaces).isEmpty { chybi.append(pole.skill ? "description" : "airine.popis (nebo description)") }
+        if !chybi.isEmpty {
+            let zdroj = (jmeno?.isEmpty == false ? jmeno : nil) ?? (skill ? url.deletingLastPathComponent().lastPathComponent : url.deletingPathExtension().lastPathComponent)
+            return .bezKarty(chybi: chybi, navrhJmena: chybi.contains("name") ? Self.kebab(zdroj) : nil)
+        }
+        var id = pole.id
         if id == nil {
             guard doplnId else { return .preskoceno("bez id v hlavičce") }
             let nove = UUID().uuidString.lowercased()
@@ -59,22 +101,20 @@ public struct Nahlasovani: Sendable {
         if predchozi == otisk { return .beze_zmeny }
 
         let propojeny = try kopie.projekt(pro: url.deletingLastPathComponent().path)
-        let projekt = h.airine["projekt"] ?? propojeny
-        let fakta = h.airine.filter { $0.key.hasPrefix("fakt_") }
-            .map { Fakt(klic: String($0.key.dropFirst(5)), hodnota: $0.value) }.sorted { $0.klic < $1.klic }
+        let k = h.karta(skillSouborem: skill)
+        let projekt = k.projekt ?? propojeny
         let hl = Hlaseni(
             id: id,
-            name: h.nahore["name"] ?? url.deletingPathExtension().lastPathComponent,
-            popis: h.nahore["description"],
-            typ: h.airine["typ"] ?? (skill ? "skill" : nil),
-            klient_id: h.airine["klient"],
+            name: jmeno,
+            popis: k.popis,
+            typ: k.typ,
+            klient_id: k.klient,
             projekt_id: projekt,
             slozka_id: h.airine["slozka"],
-            fakta: fakta.isEmpty ? nil : fakta,
-            nahrazuje: h.airine["nahrazuje"],
-            vychazi_z: h.seznamy["vychazi_z"],
-            vlastnik: h.airine["vlastnik"],
-            misto: Misto(druh: "zarizeni", zarizeni: zarizeni, cesta: url.path),
+            fakta: k.fakta,
+            nahrazuje: k.nahrazuje,
+            vychazi_z: k.vychazi_z,
+            cesta: url.path,
             otisk: otisk,
             otisk_predchozi: predchozi,
             radku: obsah.split(separator: "\n", omittingEmptySubsequences: false).count,

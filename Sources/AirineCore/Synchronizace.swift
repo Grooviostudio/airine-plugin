@@ -19,18 +19,18 @@ public struct Synchronizace: Sendable {
         public var neprihlasen = false
         public var ciziZarizeni = false          // volající si vezme nové uuid a spustí znovu
         public var smazanych = 0                 // hlášení karet, které jsou v Airine smazané
+        public var nesoulad: [String] = []       // id karet, kde se hlášení liší od hlavičky souboru
     }
 
     /// Běh se vším, co potřebuje lišta i příkaz: když server řekne, že uuid
-    /// zařízení patří jinému členovi, vezme si nové, přepíše frontu a zkusí to jednou znovu.
+    /// zařízení patří jinému členovi, vezme si nové a zkusí to jednou znovu.
+    /// Zařízení jde v hlavičce požadavku, fronta se proto nepřepisuje.
     public static func spust(domov: Domov, kopie: Kopie, api: @Sendable (Nastaveni) -> AirineAPI) async throws -> Vysledek {
         var n = try Nastaveni.nacti(domov)
-        try kopie.prepisZarizeni(n.zarizeni)     // hlášení z procesu, který měl ještě staré uuid
         var v = try await Synchronizace(kopie: kopie, api: api(n)).probehni()
         if v.ciziZarizeni {
             n.zarizeni = UUID().uuidString.lowercased()
             try n.uloz(domov)
-            try kopie.prepisZarizeni(n.zarizeni)
             v = try await Synchronizace(kopie: kopie, api: api(n)).probehni()
         }
         return v
@@ -48,8 +48,12 @@ public struct Synchronizace: Sendable {
         for p in try kopie.fronta() {
             do {
                 let o = try await api.nahlas(p.hlaseni)
-                if o.stav == .rozpor || o.karta?.rozpor == true { v.rozpory.append(p.hlaseni.id) }
-                if let k = o.karta { try kopie.ulozKarty([k]) }
+                // Kartu samotnou přinese až kanál změn, tady jen příznak rozporu.
+                if o.stav == .rozpor || o.rozpor == true {
+                    v.rozpory.append(p.hlaseni.id)
+                    try kopie.oznacRozpor(p.hlaseni.id, otisk: o.otisk)
+                }
+                if !(o.hlavicka ?? []).isEmpty { v.nesoulad.append(p.hlaseni.id) }
                 try kopie.odeslano(p.hlaseni)
                 v.odeslano += 1
             } catch ChybaServeru.odmitnuto(let o) {
@@ -95,14 +99,16 @@ public struct Synchronizace: Sendable {
             catch ChybaServeru.neprihlasen { v.neprihlasen = true; return }
 
             if plna { try kopie.vymazKatalog(); plna = false }
+            let smazane = z.karty.filter { $0.smazano == true }.map(\.id)
+            let zive = z.karty.filter { $0.smazano != true }
             try kopie.db.transakce {
-                try kopie.ulozKarty(z.karty)
-                try kopie.smazKarty(z.smazano)
+                try kopie.ulozKarty(zive)
+                try kopie.smazKarty(smazane)
                 if let n = z.navod { try kopie.nastavStav("navod", n) }
                 try kopie.nastavStav("kurzor", z.kurzor)
             }
-            v.stazeno += z.karty.count
-            v.smazano += z.smazano.count
+            v.stazeno += zive.count
+            v.smazano += smazane.count
             kurzor = z.kurzor
             if !z.dalsi { return }
         }
