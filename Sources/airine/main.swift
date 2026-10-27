@@ -1,0 +1,169 @@
+import AirineCore
+import Foundation
+
+// Příkaz `airine`: hooky Claude Code a Cursoru, místní MCP server a ruční
+// obsluha. Hooky nesmí čekat na síť — čtou místní kopii a frontu
+// odesílá aplikace v liště, případně `airine sync` spuštěný na pozadí.
+
+let napoveda = """
+airine — plugin Airine pro Claude Code a Cursor
+
+  airine prihlas [--server URL]   osobní token ze stdin do Klíčenky
+  airine sync                     odešle frontu a stáhne změny katalogu
+  airine stav                     poslední synchronizace, fronta, odmítnutá hlášení
+  airine propoj <projekt_id> [--slozka CESTA]
+  airine doporuceni [--cwd CESTA] [--vse] [--hook]
+  airine nahlas <cesta> | --hook  zařadí soubor do fronty hlášení
+  airine vyres <id>               po sloučení rozporu: další hlášení naváže na verzi v Airine
+  airine mcp                      místní MCP server přes stdio
+"""
+
+var argumenty = Array(CommandLine.arguments.dropFirst())
+@MainActor func volba(_ jmeno: String) -> String? {
+    guard let i = argumenty.firstIndex(of: jmeno), i + 1 < argumenty.count else { return nil }
+    let v = argumenty[i + 1]; argumenty.removeSubrange(i...i + 1); return v
+}
+@MainActor func prepinac(_ jmeno: String) -> Bool {
+    guard let i = argumenty.firstIndex(of: jmeno) else { return false }
+    argumenty.remove(at: i); return true
+}
+func chyba(_ t: String) -> Never {
+    FileHandle.standardError.write(Data((t + "\n").utf8)); exit(1)
+}
+func stdinJson() -> [String: Any] {
+    let d = FileHandle.standardInput.readDataToEndOfFile()
+    return (try? JSONSerialization.jsonObject(with: d) as? [String: Any]) ?? [:]
+}
+
+let domov = Domov()
+let tajemstvi = Tajemstvi.vychozi(domov)
+
+@MainActor func otevri() -> (Kopie, Nastaveni) {
+    do { return (try Kopie(domov: domov, klic: Tajemstvi.klicKopie(tajemstvi)), try Nastaveni.nacti(domov)) }
+    catch { chyba("Místní kopii nejde otevřít: \(error)") }
+}
+
+@MainActor func token() -> String? {
+    guard let t = try? tajemstvi.cti("token"), let token = String(data: t, encoding: .utf8), !token.isEmpty else { return nil }
+    return token
+}
+@MainActor func api(_ n: Nastaveni) -> AirineAPI? { token().map { HttpAirine(nastaveni: n, token: $0) } }
+
+/// Spustí `airine sync` na pozadí a nečeká (hook musí doběhnout hned).
+@MainActor func synchronizujNaPozadi() {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL
+    p.arguments = ["sync", "--tise"]
+    p.standardOutput = FileHandle.nullDevice
+    p.standardError = FileHandle.nullDevice
+    try? p.run()
+}
+
+let prikaz = argumenty.isEmpty ? "" : argumenty.removeFirst()
+
+switch prikaz {
+case "prihlas":
+    var (_, n) = otevri()
+    if let s = volba("--server") { n.server = s; try? n.uloz(domov) }
+    // Token jen ze stdin, nikdy z argumentu (ten je vidět v `ps` a v historii).
+    let token = String(decoding: FileHandle.standardInput.readDataToEndOfFile(), as: UTF8.self)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard token.hasPrefix("airine_") else { chyba("Čekám osobní token Airine (airine_…) na stdin.") }
+    do { try tajemstvi.zapis("token", Data(token.utf8)) } catch { chyba("Token nejde uložit: \(error)") }
+    print("Token uložen. Server: \(n.server)")
+
+case "sync":
+    let tise = prepinac("--tise")
+    let (kopie, _) = otevri()
+    guard let t = token() else { if tise { exit(0) }; chyba("Nejsi přihlášený: airine prihlas") }
+    do {
+        let v = try await Synchronizace.spust(domov: domov, kopie: kopie) { HttpAirine(nastaveni: $0, token: t) }
+        if !tise {
+            print(v.online ? "Synchronizováno: odesláno \(v.odeslano), staženo \(v.stazeno), smazáno \(v.smazano)." : "Airine neodpovídá, fronta počká.")
+            if v.odmitnuto > 0 { print("Odmítnutá hlášení: \(v.odmitnuto) (airine stav)") }
+            if v.smazanych > 0 { print("Karty smazané v Airine: \(v.smazanych), dál se nehlásí.") }
+            if !v.rozpory.isEmpty { print("Rozpory: \(v.rozpory.joined(separator: ", "))") }
+            if v.neprihlasen { print("Token neplatí nebo nemáš modul Znalosti.") }
+        }
+    } catch { if !tise { chyba("Synchronizace selhala: \(error)") } }
+
+case "stav":
+    let (kopie, n) = otevri()
+    let f = (try? kopie.fronta(vcetneOdmitnutych: true)) ?? []
+    print("Server: \(n.server)  zařízení: \(n.nazevZarizeni) (\(n.zarizeni))")
+    print("Přihlášen: \(api(n) == nil ? "ne" : "ano")")
+    print("Poslední synchronizace: \(kopie.posledniSynchronizace.map { "\($0)" } ?? "nikdy")")
+    print("Karet v kopii: \((try? kopie.karty().count) ?? 0)  ve frontě: \(f.filter { $0.odmitnuto == nil }.count)")
+    for p in f where p.odmitnuto != nil {
+        print("Odmítnuto \(p.hlaseni.misto.cesta ?? p.hlaseni.id): " + p.odmitnuto!.chyby.map { "\($0.pole) \($0.zprava)" }.joined(separator: "; "))
+    }
+
+case "propoj":
+    let slozka = volba("--slozka") ?? FileManager.default.currentDirectoryPath
+    guard let projekt = argumenty.first else { chyba("airine propoj <projekt_id> [--slozka CESTA]") }
+    let (kopie, _) = otevri()
+    do { try kopie.propoj(slozka: slozka, projekt: projekt) } catch { chyba("\(error)") }
+    print("\(slozka) → projekt \(projekt)")
+
+case "doporuceni":
+    let hook = prepinac("--hook")
+    let vse = prepinac("--vse")
+    var cwd = volba("--cwd") ?? FileManager.default.currentDirectoryPath
+    if hook, let c = stdinJson()["cwd"] as? String { cwd = c }
+    let (kopie, n) = otevri()
+    let projekt = vse ? nil : (try? kopie.projekt(pro: cwd)) ?? nil
+    let text: String
+    do { text = try Doporuceni(kopie: kopie, projekt: projekt).text(fronta: kopie.fronta().count) }
+    catch { if hook { exit(0) }; chyba("\(error)") }
+    if hook {
+        // SessionStart: text jde do kontextu agenta. Synchronizace běží vedle.
+        let o: [String: Any] = ["hookSpecificOutput": ["hookEventName": "SessionStart", "additionalContext": text]]
+        print(String(decoding: try! JSONSerialization.data(withJSONObject: o), as: UTF8.self))
+        if api(n) != nil { synchronizujNaPozadi() }
+    } else {
+        print(text)
+    }
+
+case "nahlas":
+    let hook = prepinac("--hook")
+    var cesta = argumenty.first
+    if hook {
+        // Claude Code PostToolUse: tool_input.file_path; Cursor afterFileEdit: file_path.
+        let j = stdinJson()
+        cesta = ((j["tool_input"] as? [String: Any])?["file_path"] as? String) ?? (j["file_path"] as? String)
+    }
+    guard let cesta else { if hook { exit(0) }; chyba("airine nahlas <cesta>") }
+    let (kopie, n) = otevri()
+    do {
+        let v = try Nahlasovani(kopie: kopie, zarizeni: n.zarizeni).nahlas(cesta: cesta)
+        if case .zarazeno = v, api(n) != nil { synchronizujNaPozadi() }
+        if !hook { print(v) }
+    } catch {
+        // Hook nikdy neblokuje práci agenta; chyba jde jen do stderr.
+        FileHandle.standardError.write(Data("airine: \(error)\n".utf8))
+        exit(hook ? 0 : 1)
+    }
+
+case "vyres":
+    guard let id = argumenty.first else { chyba("airine vyres <id>") }
+    let (kopie, n) = otevri()
+    do { try Nahlasovani(kopie: kopie, zarizeni: n.zarizeni).vyresRozpor(id: id) } catch { chyba("\(error)") }
+    print("Další hlášení \(id) naváže na verzi v Airine. Ulož sloučený soubor znovu.")
+
+case "mcp":
+    let (kopie, n) = otevri()
+    let d = domov
+    let server = MistniMcp(kopie: kopie, zarizeni: n.zarizeni, synchronizuj: token().map { t in
+        { @Sendable in _ = try? await Synchronizace.spust(domov: d, kopie: kopie) { HttpAirine(nastaveni: $0, token: t) } }
+    })
+    while let radek = readLine(strippingNewline: true) {
+        if radek.isEmpty { continue }
+        if let odp = await server.zpracuj(radek) {
+            FileHandle.standardOutput.write(Data((odp + "\n").utf8))
+        }
+    }
+
+default:
+    print(napoveda)
+    exit(prikaz.isEmpty || prikaz == "help" ? 0 : 1)
+}

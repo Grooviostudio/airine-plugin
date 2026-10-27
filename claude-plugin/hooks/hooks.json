@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "/Applications/Airine.app/Contents/MacOS/airine doporuceni --hook", "timeout": 5 }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          { "type": "command", "command": "/Applications/Airine.app/Contents/MacOS/airine nahlas --hook", "timeout": 5 }
+        ]
+      }
+    ]
+  }
+}

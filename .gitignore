@@ -1,0 +1,5 @@
+.build/
+.swiftpm/
+domov-test/
+*.sqlite*
+.DS_Store
