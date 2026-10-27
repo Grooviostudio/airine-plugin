@@ -4,8 +4,10 @@ import Foundation
 /// síti — volá se z hooku po úpravě souboru a musí doběhnout hned.
 public struct Nahlasovani: Sendable {
     let kopie: Kopie
+    /// Posílat odkazy ze souboru. Vypnuto, dokud server pole `odkazy` nepřijímá.
+    public var odkazy: Bool
 
-    public init(kopie: Kopie) { self.kopie = kopie }
+    public init(kopie: Kopie, odkazy: Bool = false) { self.kopie = kopie; self.odkazy = odkazy }
 
     /// Které soubory se hlásí: MD a skills. Ostatní hook tiše přeskočí.
     public static func hlasitelny(_ cesta: String) -> Bool {
@@ -103,6 +105,7 @@ public struct Nahlasovani: Sendable {
         let propojeny = try kopie.projekt(pro: url.deletingLastPathComponent().path)
         let k = h.karta(skillSouborem: skill)
         let projekt = k.projekt ?? propojeny
+        let vazby = odkazy ? Odkazy.zeSouboru(obsah, url: url, koren: try kopie.koren(pro: url.path).map { URL(fileURLWithPath: $0) }) : nil
         let hl = Hlaseni(
             id: id,
             name: jmeno,
@@ -119,7 +122,9 @@ public struct Nahlasovani: Sendable {
             otisk_predchozi: predchozi,
             radku: obsah.split(separator: "\n", omittingEmptySubsequences: false).count,
             bajty: data.count,
-            hlavicka: h.text
+            hlavicka: h.text,
+            odkazy: vazby?.odkazy,
+            odkazy_oriznuto: vazby?.oriznuto == true ? true : nil
         )
         try kopie.zaradit(hl)
         otisky[id] = otisk

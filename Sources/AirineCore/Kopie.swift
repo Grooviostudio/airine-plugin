@@ -101,6 +101,12 @@ public final class Kopie: @unchecked Sendable {
             .max { $0.key.count < $1.key.count }?.value
     }
 
+    /// Kořen pro dohledání wikilinků: nejdelší propojená složka, ve které soubor leží.
+    public func koren(pro cesta: String) throws -> String? {
+        let c = URL(fileURLWithPath: cesta).standardizedFileURL.path
+        return try slozky().keys.filter { c.hasPrefix($0 + "/") }.max { $0.count < $1.count }
+    }
+
     // MARK: fronta
 
     public struct Polozka: Sendable {

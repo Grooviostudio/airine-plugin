@@ -459,3 +459,86 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
         }
     }
 }
+
+@Suite struct OdkazyTests {
+    let idCile = "22222222-2222-2222-2222-222222222222"
+
+    @Test func ctePouzeOdkazyNaMdBezTextu() {
+        let t = """
+        ---
+        name: x
+        airine:
+          projekt: "[[Alfa]]"
+          vychazi_z:
+            - "[[Brief#Rozpočet]]"
+        ---
+        Viz [[Brief|tenhle brief]] a [[Brief]], [[Brief#^blok1]], ![[Sablona]] a ![[logo.png]].
+        [nabídka](../klient/nabidka.md#cena), [web](https://airine.eu/x.md), [mail](mailto:a@b.cz),
+        [abs](/etc/x.md), [kotva](#nahore), [obrázek](foto.jpg), [[#Jen nadpis]].
+        `[[v kódu]]`
+        ```
+        [[v bloku]]
+        ```
+        """
+        let s = Odkazy.vytahni(t)
+        #expect(s.contains { $0.cil == "Alfa" && $0.zdroj == .hlavicka && $0.pole == "projekt" })
+        #expect(s.contains { $0.cil == "Brief" && $0.kotva == "Rozpočet" && $0.zdroj == .hlavicka && $0.pole == "vychazi_z" })
+        #expect(s.filter { $0.cil == "Brief" && $0.zdroj == .telo }.count == 3)
+        #expect(s.contains { $0.cil == "Brief" && $0.kotva == "^blok1" })
+        #expect(s.contains { $0.cil == "Sablona" && $0.druh == .vlozeni })
+        #expect(s.contains { $0.cil == "../klient/nabidka.md" && $0.kotva == "cena" && !$0.wiki })
+        #expect(!s.contains { $0.cil.contains("airine.eu") || $0.cil.contains("mailto") || $0.cil.hasPrefix("/") })
+        #expect(!s.contains { $0.cil.contains("v kódu") || $0.cil.contains("v bloku") || $0.cil.contains("foto") })
+        #expect(!s.contains { $0.cil.isEmpty })
+        // Text za | se nikam nedostane.
+        #expect(!s.contains { $0.cil.contains("tenhle") })
+    }
+
+    @Test func dohledaniCileIdANevyresene() throws {
+        let d = try docasnyDomov()
+        _ = try soubor(d, "klient/Brief.md", "---\nairine:\n  id: \(idCile)\n---\n")
+        _ = try soubor(d, "klient/nabidka.md", "bez hlavičky\n")
+        _ = try soubor(d, "archiv/hluboko/Brief.md", "starší\n")
+        let cesta = try soubor(d, "projekt/poznamka.md", "[[Brief]] [[brief#Cena]] [[Neexistuje]] ![[logo.png]] [n](../klient/nabidka.md) [x](chybi.md) [[Brief]]\n")
+        let url = URL(fileURLWithPath: cesta)
+        let (o, oriznuto) = Odkazy.zeSouboru(try String(contentsOf: url, encoding: .utf8), url: url,
+                                             koren: d.slozka.appendingPathComponent("prace"))
+        #expect(!oriznuto)
+        #expect(o.contains(Odkaz(druh: .odkaz, cil_id: idCile, cesta: "../klient/Brief.md", vyreseny: true, pocet: 2)))
+        #expect(o.contains(Odkaz(druh: .odkaz, cil_id: idCile, cesta: "../klient/Brief.md", kotva: "Cena", vyreseny: true)))
+        #expect(o.contains(Odkaz(druh: .odkaz, nazev: "Neexistuje", vyreseny: false)))
+        #expect(o.contains(Odkaz(druh: .odkaz, cesta: "../klient/nabidka.md", vyreseny: true)))
+        #expect(o.contains(Odkaz(druh: .odkaz, cesta: "chybi.md", vyreseny: false)))
+        #expect(o.count == 5)
+    }
+
+    @Test func stropAOriznuti() throws {
+        let d = try docasnyDomov()
+        let cesta = try soubor(d, "a.md", (0..<520).map { "[[c\($0)]]" }.joined(separator: " "))
+        let url = URL(fileURLWithPath: cesta)
+        let (o, oriznuto) = Odkazy.zeSouboru(try String(contentsOf: url, encoding: .utf8), url: url, koren: nil)
+        #expect(o.count == Odkazy.strop); #expect(oriznuto)
+    }
+
+    @Test func vychoziHlaseniOdkazyNeposila() throws {
+        let d = try docasnyDomov(); let k = try kopie(d)
+        let c = try soubor(d, "b.md", "---\nname: b\ndescription: B\nairine:\n  typ: brief\n---\n[[Jiny]]\n")
+        _ = try Nahlasovani(kopie: k).nahlas(cesta: c)
+        let h = try #require(try k.fronta().first?.hlaseni)
+        #expect(h.odkazy == nil)
+        let json = String(decoding: try JSONEncoder().encode(h), as: UTF8.self)
+        #expect(!json.contains("odkazy"))
+    }
+
+    @Test func zapnuteHlaseniNeseOdkazy() throws {
+        let d = try docasnyDomov(); let k = try kopie(d)
+        let c = try soubor(d, "b.md", "---\nname: b\ndescription: B\nairine:\n  typ: brief\n---\nbez odkazů\n")
+        _ = try Nahlasovani(kopie: k, odkazy: true).nahlas(cesta: c)
+        #expect(try k.fronta().first?.hlaseni.odkazy == [])
+    }
+
+    @Test func relativniCesta() {
+        #expect(Odkazy.relativni("/a/b/c.md", od: "/a/b") == "c.md")
+        #expect(Odkazy.relativni("/a/x/c.md", od: "/a/b/d") == "../../x/c.md")
+    }
+}

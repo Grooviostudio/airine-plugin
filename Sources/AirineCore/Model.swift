@@ -171,17 +171,21 @@ public struct Hlaseni: Codable, Hashable, Sendable, Identifiable {
     public var radku: Int
     public var bajty: Int
     public var hlavicka: String?
+    /// Odkazy na jiné MD soubory (bez textu). Chybí = plugin je neposílá
+    /// a server vazby nemění; `[]` = soubor žádné nemá.
+    public var odkazy: [Odkaz]?
+    public var odkazy_oriznuto: Bool?
 
     public init(id: String, name: String? = nil, popis: String? = nil, typ: String? = nil,
                 klient_id: String? = nil, projekt_id: String? = nil, slozka_id: String? = nil,
                 fakta: [String: String]? = nil, nahrazuje: String? = nil, vychazi_z: [String]? = nil,
                 cesta: String? = nil, otisk: String, otisk_predchozi: String? = nil,
-                radku: Int, bajty: Int, hlavicka: String? = nil) {
+                radku: Int, bajty: Int, hlavicka: String? = nil, odkazy: [Odkaz]? = nil, odkazy_oriznuto: Bool? = nil) {
         self.id = id; self.name = name; self.popis = popis; self.typ = typ
         self.klient_id = klient_id; self.projekt_id = projekt_id; self.slozka_id = slozka_id
         self.fakta = fakta; self.nahrazuje = nahrazuje; self.vychazi_z = vychazi_z; self.cesta = cesta
         self.otisk = otisk; self.otisk_predchozi = otisk_predchozi; self.radku = radku; self.bajty = bajty
-        self.hlavicka = hlavicka
+        self.hlavicka = hlavicka; self.odkazy = odkazy; self.odkazy_oriznuto = odkazy_oriznuto
     }
 }
 
