@@ -159,7 +159,7 @@ public enum Odkazy {
     public static func zeSouboru(_ obsah: String, url: URL, koren: URL?) -> (odkazy: [Odkaz], oriznuto: Bool) {
         let slozka = url.deletingLastPathComponent().standardizedFileURL
         let rejstrik = Rejstrik(koren: koren ?? slozka)
-        var poradi: [Odkaz] = [], pocty: [Odkaz: Int] = [:]
+        var poradi: [Klic: Int] = [:], vse: [Odkaz] = []
         for s in vytahni(obsah) {
             var o = Odkaz(druh: s.druh, kotva: s.kotva, vyreseny: false, zdroj: s.zdroj, pole: s.pole)
             let cilCesta: String?
@@ -178,13 +178,28 @@ public enum Odkazy {
             } else if s.wiki {
                 o.nazev = String(s.cil.prefix(256))
             } else {
-                o.cesta = s.cil
+                guard let c = normalizovana(s.cil) else { continue }
+                o.cesta = c
             }
-            if pocty[o] == nil { poradi.append(o) }
-            pocty[o, default: 0] += 1
+            // Meze serveru: cesta do 1024, kotva do 256 znaků.
+            if (o.cesta?.count ?? 0) > 1024 { continue }
+            o.kotva = o.kotva.map { String($0.prefix(256)) }
+            // Klíč jako na serveru: (druh, cil_id ?? cesta ?? nazev, kotva, zdroj, pole).
+            // Tentýž cíl pod dvěma cestami (kopie se stejným id) je jedna položka.
+            let klic = Klic(druh: o.druh, cil: o.cil_id ?? o.cesta ?? o.nazev ?? "", kotva: o.kotva, zdroj: o.zdroj, pole: o.pole)
+            if let i = poradi[klic] { vse[i].pocet += 1 } else { poradi[klic] = vse.count; vse.append(o) }
         }
-        let vse = poradi.map { o -> Odkaz in var o = o; o.pocet = pocty[o] ?? 1; return o }
         return (Array(vse.prefix(strop)), vse.count > strop)
+    }
+
+    struct Klic: Hashable { let druh: Odkaz.Druh; let cil: String; let kotva: String?; let zdroj: Odkaz.Zdroj; let pole: String? }
+
+    /// Relativní cesta jen s `/`, bez `.` a prázdných segmentů; `..` zůstává.
+    /// Se zpětným lomítkem nebo prázdná vypadne.
+    static func normalizovana(_ c: String) -> String? {
+        guard !c.contains("\\"), !c.contains("\0") else { return nil }
+        let casti = c.split(separator: "/", omittingEmptySubsequences: true).filter { $0 != "." }
+        return casti.isEmpty ? nil : casti.joined(separator: "/")
     }
 
     static func idSouboru(_ cesta: String) -> String? {

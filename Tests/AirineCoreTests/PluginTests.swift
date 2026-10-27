@@ -537,6 +537,20 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
         #expect(try k.fronta().first?.hlaseni.odkazy == [])
     }
 
+    @Test func klicJakoNaServeru() throws {
+        let d = try docasnyDomov()
+        // Kopie téhož souboru (stejné id) ve dvou složkách = jedna položka.
+        _ = try soubor(d, "a/Alfa.md", "---\nairine:\n  id: \(idCile)\n---\n")
+        _ = try soubor(d, "b/Alfa.md", "---\nairine:\n  id: \(idCile)\n---\n")
+        let cesta = try soubor(d, "a/x.md", "[[Alfa]] [k](../b/Alfa.md) [n](./chybi//beta.md) [z](sl\\ozka.md)\n")
+        let url = URL(fileURLWithPath: cesta)
+        let (o, _) = Odkazy.zeSouboru(try String(contentsOf: url, encoding: .utf8), url: url, koren: d.slozka.appendingPathComponent("prace"))
+        #expect(o.filter { $0.cil_id == idCile }.map(\.pocet) == [2])
+        #expect(o.contains(Odkaz(druh: .odkaz, cesta: "chybi/beta.md", vyreseny: false)))
+        #expect(!o.contains { $0.cesta?.contains("\\") == true })
+        #expect(o.allSatisfy { $0.zdroj == .telo && $0.pole == nil })
+    }
+
     @Test func relativniCesta() {
         #expect(Odkazy.relativni("/a/b/c.md", od: "/a/b") == "c.md")
         #expect(Odkazy.relativni("/a/x/c.md", od: "/a/b/d") == "../../x/c.md")
