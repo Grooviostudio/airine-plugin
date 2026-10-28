@@ -1,0 +1,925 @@
+{
+  "popis": "Vstup → výstup lib/katalog.js doporuceni(). Plugin (Swift) má dávat totéž. Generuje test/fixtures/katalog-doporuceni.js; ruční úprava shodí test/katalog.test.js.",
+  "pripady": [
+    {
+      "nazev": "čistá karta bez signálů",
+      "vstup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "karta-1",
+            "typ": "brief",
+            "verze": 1,
+            "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "ulozeny_otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "contact_id": "00000000-0000-4000-8000-0000000000c1",
+            "project_id": "00000000-0000-4000-8000-0000000000a1",
+            "nahrazuje_id": null,
+            "rozpor": false,
+            "fakta": {},
+            "mista": [
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d1",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-27T10:00:00Z"
+              },
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d2",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-27T10:00:00Z"
+              }
+            ]
+          }
+        ],
+        "projekt": {
+          "id": "00000000-0000-4000-8000-0000000000a1",
+          "contact_id": "00000000-0000-4000-8000-0000000000c1",
+          "deadline": "2026-11-30",
+          "total_price": 120000,
+          "hourly_rate": 1500
+        }
+      },
+      "vystup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "karta-1",
+            "typ": "brief",
+            "stav": "plati",
+            "verze": 1,
+            "signaly": []
+          }
+        ]
+      }
+    },
+    {
+      "nazev": "nahrazená verze jde až za platnou",
+      "vstup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "brief-v1",
+            "typ": "brief",
+            "verze": 1,
+            "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "ulozeny_otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "contact_id": "00000000-0000-4000-8000-0000000000c1",
+            "project_id": "00000000-0000-4000-8000-0000000000a1",
+            "nahrazuje_id": null,
+            "rozpor": false,
+            "fakta": {},
+            "mista": [
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d1",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-27T10:00:00Z"
+              },
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d2",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-27T10:00:00Z"
+              }
+            ]
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000002",
+            "name": "brief-v2",
+            "typ": "brief",
+            "verze": 1,
+            "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "ulozeny_otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "contact_id": "00000000-0000-4000-8000-0000000000c1",
+            "project_id": "00000000-0000-4000-8000-0000000000a1",
+            "nahrazuje_id": "00000000-0000-4000-8000-000000000001",
+            "rozpor": false,
+            "fakta": {},
+            "mista": [
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d1",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-27T10:00:00Z"
+              },
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d2",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-27T10:00:00Z"
+              }
+            ]
+          }
+        ],
+        "projekt": {
+          "id": "00000000-0000-4000-8000-0000000000a1",
+          "contact_id": "00000000-0000-4000-8000-0000000000c1",
+          "deadline": "2026-11-30",
+          "total_price": 120000,
+          "hourly_rate": 1500
+        }
+      },
+      "vystup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000002",
+            "name": "brief-v2",
+            "typ": "brief",
+            "stav": "plati",
+            "verze": 1,
+            "signaly": []
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "brief-v1",
+            "typ": "brief",
+            "stav": "nahrazeno",
+            "nahrazeno_kym": [
+              "00000000-0000-4000-8000-000000000002"
+            ],
+            "verze": 1,
+            "signaly": []
+          }
+        ]
+      }
+    },
+    {
+      "nazev": "jen na jednom zařízení",
+      "vstup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "karta-1",
+            "typ": "brief",
+            "verze": 1,
+            "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "ulozeny_otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "contact_id": "00000000-0000-4000-8000-0000000000c1",
+            "project_id": "00000000-0000-4000-8000-0000000000a1",
+            "nahrazuje_id": null,
+            "rozpor": false,
+            "fakta": {},
+            "mista": [
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d1",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-27T10:00:00Z"
+              }
+            ]
+          }
+        ]
+      },
+      "vystup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "karta-1",
+            "typ": "brief",
+            "stav": "plati",
+            "verze": 1,
+            "signaly": [
+              {
+                "kod": "jen_na_jednom_zarizeni"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "nazev": "nikde na disku: všechna místa z odvolaných tokenů MCP",
+      "vstup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "karta-1",
+            "typ": "brief",
+            "verze": 1,
+            "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "ulozeny_otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "contact_id": "00000000-0000-4000-8000-0000000000c1",
+            "project_id": "00000000-0000-4000-8000-0000000000a1",
+            "nahrazuje_id": null,
+            "rozpor": false,
+            "fakta": {},
+            "mista": [
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d1",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-27T10:00:00Z",
+                "odvolane": true
+              },
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d2",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-20T08:00:00Z",
+                "odvolane": true
+              }
+            ]
+          }
+        ]
+      },
+      "vystup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "karta-1",
+            "typ": "brief",
+            "stav": "plati",
+            "verze": 1,
+            "signaly": [
+              {
+                "kod": "nikde_na_disku",
+                "naposledy_videno": "2026-10-27T10:00:00Z"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "nazev": "odvolané a platné místo: počítá se jen platné",
+      "vstup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "karta-1",
+            "typ": "brief",
+            "verze": 1,
+            "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "ulozeny_otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "contact_id": "00000000-0000-4000-8000-0000000000c1",
+            "project_id": "00000000-0000-4000-8000-0000000000a1",
+            "nahrazuje_id": null,
+            "rozpor": false,
+            "fakta": {},
+            "mista": [
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d1",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-27T10:00:00Z"
+              },
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d2",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-27T10:00:00Z",
+                "odvolane": true
+              }
+            ]
+          }
+        ]
+      },
+      "vystup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "karta-1",
+            "typ": "brief",
+            "stav": "plati",
+            "verze": 1,
+            "signaly": [
+              {
+                "kod": "jen_na_jednom_zarizeni"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "nazev": "staré místo pořád platí",
+      "vstup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "karta-1",
+            "typ": "brief",
+            "verze": 1,
+            "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "ulozeny_otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "contact_id": "00000000-0000-4000-8000-0000000000c1",
+            "project_id": "00000000-0000-4000-8000-0000000000a1",
+            "nahrazuje_id": null,
+            "rozpor": false,
+            "fakta": {},
+            "mista": [
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d1",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-01-01T10:00:00Z"
+              },
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d2",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-01-01T10:00:00Z"
+              }
+            ]
+          }
+        ]
+      },
+      "vystup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "karta-1",
+            "typ": "brief",
+            "stav": "plati",
+            "verze": 1,
+            "signaly": []
+          }
+        ]
+      }
+    },
+    {
+      "nazev": "karta bez míst disk nesignalizuje",
+      "vstup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "karta-1",
+            "typ": "brief",
+            "verze": 1,
+            "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "ulozeny_otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "contact_id": "00000000-0000-4000-8000-0000000000c1",
+            "project_id": "00000000-0000-4000-8000-0000000000a1",
+            "nahrazuje_id": null,
+            "rozpor": false,
+            "fakta": {},
+            "mista": []
+          }
+        ]
+      },
+      "vystup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "karta-1",
+            "typ": "brief",
+            "stav": "plati",
+            "verze": 1,
+            "signaly": []
+          }
+        ]
+      }
+    },
+    {
+      "nazev": "obsah není nahraný v Airine",
+      "vstup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "karta-1",
+            "typ": "brief",
+            "verze": 1,
+            "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "ulozeny_otisk": null,
+            "contact_id": "00000000-0000-4000-8000-0000000000c1",
+            "project_id": "00000000-0000-4000-8000-0000000000a1",
+            "nahrazuje_id": null,
+            "rozpor": false,
+            "fakta": {},
+            "mista": [
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d1",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-27T10:00:00Z"
+              },
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d2",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-27T10:00:00Z"
+              }
+            ]
+          }
+        ]
+      },
+      "vystup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "karta-1",
+            "typ": "brief",
+            "stav": "plati",
+            "verze": 1,
+            "signaly": [
+              {
+                "kod": "neni_v_airine"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "nazev": "rozpor dvou zařízení",
+      "vstup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "karta-1",
+            "typ": "brief",
+            "verze": 1,
+            "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "ulozeny_otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "contact_id": "00000000-0000-4000-8000-0000000000c1",
+            "project_id": "00000000-0000-4000-8000-0000000000a1",
+            "nahrazuje_id": null,
+            "rozpor": true,
+            "fakta": {},
+            "mista": [
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d1",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-27T10:00:00Z"
+              },
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d2",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-27T10:00:00Z"
+              }
+            ]
+          }
+        ]
+      },
+      "vystup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "karta-1",
+            "typ": "brief",
+            "stav": "plati",
+            "verze": 1,
+            "signaly": [
+              {
+                "kod": "rozpor"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "nazev": "fakta nesedí s projektem",
+      "vstup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "karta-1",
+            "typ": "brief",
+            "verze": 1,
+            "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "ulozeny_otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "contact_id": "00000000-0000-4000-8000-0000000000c1",
+            "project_id": "00000000-0000-4000-8000-0000000000a1",
+            "nahrazuje_id": null,
+            "rozpor": false,
+            "fakta": {
+              "termin": "2026-12-15",
+              "rozpocet": "100 000 Kč",
+              "sazba": "1500",
+              "mena": "CZK"
+            },
+            "mista": [
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d1",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-27T10:00:00Z"
+              },
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d2",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-27T10:00:00Z"
+              }
+            ]
+          }
+        ],
+        "projekt": {
+          "id": "00000000-0000-4000-8000-0000000000a1",
+          "contact_id": "00000000-0000-4000-8000-0000000000c1",
+          "deadline": "2026-11-30",
+          "total_price": 120000,
+          "hourly_rate": 1500
+        }
+      },
+      "vystup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "karta-1",
+            "typ": "brief",
+            "stav": "plati",
+            "verze": 1,
+            "signaly": [
+              {
+                "kod": "fakt_nesedi",
+                "klic": "termin",
+                "v_souboru": "2026-12-15",
+                "v_projektu": "2026-11-30"
+              },
+              {
+                "kod": "fakt_nesedi",
+                "klic": "rozpocet",
+                "v_souboru": 100000,
+                "v_projektu": 120000
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "nazev": "fakta sedí (jiný zápis čísla)",
+      "vstup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "karta-1",
+            "typ": "brief",
+            "verze": 1,
+            "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "ulozeny_otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "contact_id": "00000000-0000-4000-8000-0000000000c1",
+            "project_id": "00000000-0000-4000-8000-0000000000a1",
+            "nahrazuje_id": null,
+            "rozpor": false,
+            "fakta": {
+              "termin": "2026-11-30",
+              "rozpocet": "120 000,00",
+              "sazba": "1 500"
+            },
+            "mista": [
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d1",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-27T10:00:00Z"
+              },
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d2",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-27T10:00:00Z"
+              }
+            ]
+          }
+        ],
+        "projekt": {
+          "id": "00000000-0000-4000-8000-0000000000a1",
+          "contact_id": "00000000-0000-4000-8000-0000000000c1",
+          "deadline": "2026-11-30",
+          "total_price": 120000,
+          "hourly_rate": 1500
+        }
+      },
+      "vystup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "karta-1",
+            "typ": "brief",
+            "stav": "plati",
+            "verze": 1,
+            "signaly": []
+          }
+        ]
+      }
+    },
+    {
+      "nazev": "karta klienta bez projektu",
+      "vstup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "karta-1",
+            "typ": "brief",
+            "verze": 1,
+            "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "ulozeny_otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "contact_id": "00000000-0000-4000-8000-0000000000c1",
+            "project_id": null,
+            "nahrazuje_id": null,
+            "rozpor": false,
+            "fakta": {},
+            "mista": [
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d1",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-27T10:00:00Z"
+              },
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d2",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-27T10:00:00Z"
+              }
+            ]
+          }
+        ],
+        "projekt": {
+          "id": "00000000-0000-4000-8000-0000000000a1",
+          "contact_id": "00000000-0000-4000-8000-0000000000c1",
+          "deadline": "2026-11-30",
+          "total_price": 120000,
+          "hourly_rate": 1500
+        }
+      },
+      "vystup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "karta-1",
+            "typ": "brief",
+            "stav": "plati",
+            "verze": 1,
+            "signaly": [
+              {
+                "kod": "bez_projektu"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "nazev": "karta jiného projektu se nevrací",
+      "vstup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "karta-1",
+            "typ": "brief",
+            "verze": 1,
+            "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "ulozeny_otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "contact_id": "00000000-0000-4000-8000-0000000000c1",
+            "project_id": "00000000-0000-4000-8000-0000000000a1",
+            "nahrazuje_id": null,
+            "rozpor": false,
+            "fakta": {},
+            "mista": [
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d1",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-27T10:00:00Z"
+              },
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d2",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-27T10:00:00Z"
+              }
+            ]
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000002",
+            "name": "karta-2",
+            "typ": "brief",
+            "verze": 1,
+            "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "ulozeny_otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "contact_id": "00000000-0000-4000-8000-000000000098",
+            "project_id": "00000000-0000-4000-8000-000000000099",
+            "nahrazuje_id": null,
+            "rozpor": false,
+            "fakta": {},
+            "mista": [
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d1",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-27T10:00:00Z"
+              },
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d2",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-27T10:00:00Z"
+              }
+            ]
+          }
+        ],
+        "projekt": {
+          "id": "00000000-0000-4000-8000-0000000000a1",
+          "contact_id": "00000000-0000-4000-8000-0000000000c1",
+          "deadline": "2026-11-30",
+          "total_price": 120000,
+          "hourly_rate": 1500
+        }
+      },
+      "vystup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "karta-1",
+            "typ": "brief",
+            "stav": "plati",
+            "verze": 1,
+            "signaly": []
+          }
+        ]
+      }
+    },
+    {
+      "nazev": "bez práva: jméno a vlastník, žádný obsah",
+      "vstup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000003",
+            "name": "smlouva",
+            "vlastnik_id": "00000000-0000-4000-8000-000000000050",
+            "vlastnik_jmeno": "Eva",
+            "bez_prava": true
+          }
+        ]
+      },
+      "vystup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000003",
+            "name": "smlouva",
+            "stav": "bez_prava",
+            "vlastnik_jmeno": "Eva",
+            "signaly": [
+              {
+                "kod": "pozadej_o_pristup"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "nazev": "bez práva u projektu: jen karta téhož projektu",
+      "vstup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000004",
+            "name": "rozpocet",
+            "vlastnik_jmeno": "Eva",
+            "bez_prava": true,
+            "project_id": "00000000-0000-4000-8000-0000000000a1"
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000005",
+            "name": "cizi",
+            "bez_prava": true,
+            "project_id": "00000000-0000-4000-8000-000000000099"
+          }
+        ],
+        "projekt": {
+          "id": "00000000-0000-4000-8000-0000000000a1",
+          "contact_id": "00000000-0000-4000-8000-0000000000c1",
+          "deadline": "2026-11-30",
+          "total_price": 120000,
+          "hourly_rate": 1500
+        }
+      },
+      "vystup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000004",
+            "name": "rozpocet",
+            "stav": "bez_prava",
+            "vlastnik_jmeno": "Eva",
+            "signaly": [
+              {
+                "kod": "pozadej_o_pristup"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "nazev": "smazaná karta zmizí",
+      "vstup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "karta-1",
+            "typ": "brief",
+            "verze": 1,
+            "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "ulozeny_otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "contact_id": "00000000-0000-4000-8000-0000000000c1",
+            "project_id": "00000000-0000-4000-8000-0000000000a1",
+            "nahrazuje_id": null,
+            "rozpor": false,
+            "fakta": {},
+            "mista": [
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d1",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-27T10:00:00Z"
+              },
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d2",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-27T10:00:00Z"
+              }
+            ]
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000002",
+            "smazano": true
+          }
+        ]
+      },
+      "vystup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "karta-1",
+            "typ": "brief",
+            "stav": "plati",
+            "verze": 1,
+            "signaly": []
+          }
+        ]
+      }
+    },
+    {
+      "nazev": "nahrazení kartou bez práva se nepočítá",
+      "vstup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "karta-1",
+            "typ": "brief",
+            "verze": 1,
+            "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "ulozeny_otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "contact_id": "00000000-0000-4000-8000-0000000000c1",
+            "project_id": "00000000-0000-4000-8000-0000000000a1",
+            "nahrazuje_id": null,
+            "rozpor": false,
+            "fakta": {},
+            "mista": [
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d1",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-27T10:00:00Z"
+              },
+              {
+                "zarizeni_id": "00000000-0000-4000-8000-0000000000d2",
+                "cesta": "~/Airine/x.md",
+                "otisk": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "videno_at": "2026-10-27T10:00:00Z"
+              }
+            ]
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000002",
+            "name": "x",
+            "bez_prava": true,
+            "nahrazuje_id": "00000000-0000-4000-8000-000000000001"
+          }
+        ]
+      },
+      "vystup": {
+        "karty": [
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "karta-1",
+            "typ": "brief",
+            "stav": "plati",
+            "verze": 1,
+            "signaly": []
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000002",
+            "name": "x",
+            "stav": "bez_prava",
+            "vlastnik_jmeno": null,
+            "signaly": [
+              {
+                "kod": "pozadej_o_pristup"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

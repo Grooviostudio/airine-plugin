@@ -11,9 +11,14 @@ public struct Misto: Codable, Hashable, Sendable {
     public var cesta: String?
     public var otisk: String?
     public var videno_at: String?
-    public init(zarizeni_id: String? = nil, cesta: String? = nil, otisk: String? = nil, videno_at: String? = nil) {
-        self.zarizeni_id = zarizeni_id; self.cesta = cesta; self.otisk = otisk; self.videno_at = videno_at
+    /// Zařízení MCP s odvolaným nebo smazaným tokenem: místo se dalším hlášením
+    /// neobnoví, proto neplatí. Chybí-li, platí (`mistoPlati()` v lib/katalog.js).
+    public var odvolane: Bool?
+    public init(zarizeni_id: String? = nil, cesta: String? = nil, otisk: String? = nil, videno_at: String? = nil, odvolane: Bool? = nil) {
+        self.zarizeni_id = zarizeni_id; self.cesta = cesta; self.otisk = otisk; self.videno_at = videno_at; self.odvolane = odvolane
     }
+    /// Stáří `videno_at` se nepočítá: plugin soubor beze změny obsahu znovu nehlásí.
+    public var plati: Bool { odvolane != true }
 }
 
 /// Karta souboru, jak ji vydá kanál změn. Tři tvary:
@@ -65,8 +70,16 @@ public struct Karta: Codable, Hashable, Sendable, Identifiable {
         self.vlastnik_jmeno = vlastnik_jmeno; self.mista = mista; self.bez_prava = bez_prava
     }
 
-    /// Stejné signály jako serverové `doporuceni()`.
-    public var jenNaJednomZarizeni: Bool { Set((mista ?? []).compactMap(\.zarizeni_id)).count == 1 }
+    /// Stejné signály jako serverové `doporuceni()`: počítají se jen platná místa.
+    public var jenNaJednomZarizeni: Bool { Set((mista ?? []).filter(\.plati).compactMap(\.zarizeni_id)).count == 1 }
+    /// Místa má, ale žádné neplatí. Karta bez míst disk nesignalizuje (Airine o ní nic neví).
+    public var nikdeNaDisku: Bool { let m = mista ?? []; return !m.isEmpty && !m.contains(where: \.plati) }
+    /// Nejnovější `videno_at` ze všech míst, i neplatných.
+    public var naposledyVideno: String? {
+        let f = ISO8601DateFormatter()
+        return (mista ?? []).compactMap { m in m.videno_at.flatMap { v in f.date(from: v).map { (v, $0) } } }
+            .max { $0.1 < $1.1 }?.0
+    }
     public var neniVAirine: Bool { ulozeny_otisk != otisk }
 }
 

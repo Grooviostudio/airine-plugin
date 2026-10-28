@@ -54,8 +54,9 @@ public struct Doporuceni: Sendable {
             if let f = k.fakta, !f.isEmpty { r.append("  " + f.sorted { $0.key < $1.key }.map { "\($0.key): \($0.value)" }.joined(separator: ", ")) }
             if k.rozpor == true { r.append("  ⚠ dvě verze v rozporu, rozhodne \(k.vlastnik_jmeno ?? "vlastník")") }
             if k.jenNaJednomZarizeni { r.append("  ⚠ leží jen na jednom počítači, kolegové ho nevidí") }
+            if k.nikdeNaDisku { r.append("  ⚠ nejspíš už není na žádném počítači" + (k.naposledyVideno.map { ", naposledy viděn \($0.prefix(10))" } ?? "")) }
             if k.neniVAirine { r.append("  obsah zatím není v Airine, jen karta") }
-            if let m = k.mista?.first?.cesta { r.append("  \(m)") }
+            if let m = (k.mista?.first(where: \.plati) ?? k.mista?.first)?.cesta { r.append("  \(m)") }
         }
         if platne.count > 40 { r.append("… a dalších \(platne.count - 40), vypíše `airine doporuceni --vse`") }
         for k in bezPrava.prefix(10) { r.append("- \(k.name ?? "soubor"): bez přístupu, požádej o něj \(k.vlastnik_jmeno ?? "vlastníka")") }

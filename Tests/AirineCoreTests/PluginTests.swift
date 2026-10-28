@@ -474,6 +474,35 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
     }
 }
 
+/// Sdílená sada s doporuceni() na serveru (test/fixtures/katalog-doporuceni.json
+/// v App, Vývojář A): signály o disku a o obsahu v Airine musí sedět s výstupem.
+@Suite struct DoporuceniFixtureTests {
+    struct Signal: Decodable { let kod: String; let naposledy_videno: String? }
+    struct Vystup: Decodable { let id: String; let stav: String; let signaly: [Signal] }
+    struct Pripad: Decodable {
+        struct Vstup: Decodable { let karty: [Karta] }
+        struct Vys: Decodable { let karty: [Vystup] }
+        let nazev: String; let vstup: Vstup; let vystup: Vys
+    }
+    struct Sada: Decodable { let pripady: [Pripad] }
+
+    @Test func signalyMist() throws {
+        let url = try #require(Bundle.module.url(forResource: "katalog-doporuceni", withExtension: "json", subdirectory: "Fixtures"))
+        let sada = try JSONDecoder().decode(Sada.self, from: Data(contentsOf: url))
+        #expect(sada.pripady.contains { $0.nazev.hasPrefix("nikde na disku") })
+        for p in sada.pripady {
+            for v in p.vystup.karty where v.stav != "bez_prava" {
+                let k = try #require(p.vstup.karty.first { $0.id == v.id }, "\(p.nazev)")
+                let kody = Set(v.signaly.map(\.kod))
+                #expect(k.jenNaJednomZarizeni == kody.contains("jen_na_jednom_zarizeni"), "\(p.nazev)")
+                #expect(k.nikdeNaDisku == kody.contains("nikde_na_disku"), "\(p.nazev)")
+                #expect(k.neniVAirine == kody.contains("neni_v_airine"), "\(p.nazev)")
+                if let s = v.signaly.first(where: { $0.kod == "nikde_na_disku" }) { #expect(k.naposledyVideno == s.naposledy_videno, "\(p.nazev)") }
+            }
+        }
+    }
+}
+
 @Suite struct OdkazyTests {
     let idCile = "22222222-2222-2222-2222-222222222222"
 
