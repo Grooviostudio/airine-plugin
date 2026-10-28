@@ -345,7 +345,8 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
            "slozka_id":null,"vlastnik_id":"u1","nahrazuje_id":"a0","vychazi_z":["a5"],"fakta":{"sazba":"1200"},
            "otisk":"o2","verze":3,"ulozeny_otisk":"o1","rozpor":false,"zmenil_id":"u1","smazano_at":null,
            "created_at":"2026-10-27T08:00:00Z","updated_at":"2026-10-27T09:00:00Z","cist":true,"menit":false,
-           "vlastnik_jmeno":"Eva","mista":[{"zarizeni_id":"z1","cesta":"/x/brief.md","otisk":"o2","videno_at":"2026-10-27T09:00:00Z"}]}
+           "vlastnik_jmeno":"Eva","mista":[{"zarizeni_id":"z1","cesta":"/x/brief.md","otisk":"o2","videno_at":"2026-10-27T09:00:00Z"},
+                    {"zarizeni_id":"z2","cesta":"/y/brief.md","otisk":"o2","videno_at":"2026-10-28T09:00:00Z","odvolane":true}]}
         ],"dalsi":false,"kurzor":"2026-10-27T09:00:00Z|a4","navod_zmenen":true,
          "navod":{"verze":2,"vlastni":false,"obsah":{"verze":1,"pravidla":["Hlas soubory po změně."],"typy":["brief","skill"]},"vychozi_prava":{}}}
         """#
@@ -356,6 +357,9 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
         #expect(k.klient_id == "c1" && k.projekt_id == "p1" && k.nahrazuje == "a0")
         #expect(k.fakta == ["sazba": "1200"] && k.cist == true && k.menit == false)
         #expect(k.mista?.first?.zarizeni_id == "z1" && k.jenNaJednomZarizeni && k.neniVAirine)
+        // Odvolané zařízení posílá kanál změn jako mista[].odvolane (App 78685c205), jinak pole chybí.
+        #expect(k.mista?.first?.odvolane == nil && k.mista?.last?.odvolane == true && !k.nikdeNaDisku)
+        #expect(k.naposledyVideno == "2026-10-28T09:00:00Z")
         let n = try #require(z.navod)
         #expect(n.verze == 2 && n.obsah.contains("- Hlas soubory po změně.") && n.obsah.contains("Typy souborů: brief, skill"))
         #expect(!n.obsah.contains("verze"))
