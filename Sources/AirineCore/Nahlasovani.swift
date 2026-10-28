@@ -48,6 +48,12 @@ public struct Nahlasovani: Sendable {
         return r.isEmpty ? nil : r
     }
 
+    /// První řádek `<!-- airine vlastnik=… -->`.
+    static func maWatermark(_ obsah: String) -> Bool {
+        let prvni = obsah.prefix { $0 != "\n" && $0 != "\r\n" }
+        return prvni.hasPrefix("<!-- airine ") && prvni.contains("vlastnik=")
+    }
+
     static func jePlatneJmeno(_ s: String) -> Bool {
         s.count <= 64 && s.range(of: "^[a-z0-9]+(-[a-z0-9]+)*$", options: .regularExpression) != nil
     }
@@ -61,6 +67,10 @@ public struct Nahlasovani: Sendable {
         var data = try Data(contentsOf: url)
         guard data.count <= 1_048_576 else { return .preskoceno("nad 1 MB") }
         guard var obsah = String(data: data, encoding: .utf8) else { return .preskoceno("není UTF-8") }
+        // Dokument z repa s watermarkem na prvním řádku má vlastníka a historii
+        // v gitu, ne front matter: plugin ho nehlásí, nic do něj nepíše a agentovi
+        // nic neradí.
+        if Self.maWatermark(obsah) { return .preskoceno("dokument s watermarkem") }
         let skill = url.lastPathComponent == "SKILL.md"
 
         var h = Hlavicka.precti(obsah)

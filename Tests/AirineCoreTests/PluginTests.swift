@@ -388,6 +388,20 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
         #expect(v.proAgenta?.contains("name: zapis-schuzky") == true)
     }
 
+    @Test func dokumentSWatermarkemSePreskoci() throws {
+        let d = try docasnyDomov(); let k = try kopie(d)
+        let telo = "<!-- airine vlastnik=alfa psali=alfa zmeneno=2026-10-28 obsah=1234abcd -->\n# Roadmapa\n"
+        let cesta = try soubor(d, "roadmap.md", telo)
+        let v = try Nahlasovani(kopie: k).nahlas(cesta: cesta)
+        #expect(v == .preskoceno("dokument s watermarkem"))
+        #expect(v.proAgenta == nil)
+        #expect(try String(contentsOfFile: cesta, encoding: .utf8) == telo)
+        #expect(try k.fronta().isEmpty)
+        // Komentář, který není watermark, hlášení nezastaví.
+        let jiny = try soubor(d, "jiny.md", "<!-- poznamka -->\n# X\n")
+        #expect(try Nahlasovani(kopie: k).nahlas(cesta: jiny) != .preskoceno("dokument s watermarkem"))
+    }
+
     @Test func skillStaciJmenoAPopis() throws {
         let d = try docasnyDomov(); let k = try kopie(d)
         let cesta = try soubor(d, "nabidka/SKILL.md", "---\nname: nabidka\ndescription: Nabídka\n---\nx\n")

@@ -18,6 +18,9 @@ a skills po změně nahlásí do katalogu Airine. Funguje i bez spojení.
   `airine.typ`. U skillu (`SKILL.md` nebo `metadata.airine-id`) platí `name` a `description`
   nahoře a typ je `skill`. Pravidlo je stejné jako na serveru. Jinak plugin soubor nehlásí
   a agentovi řekne, co doplnit, i s návrhem jména. Hlavičku za něj nepíše.
+- Soubor, který má na prvním řádku watermark (`<!-- airine vlastnik=… -->`), plugin přeskočí:
+  nehlásí ho, nic do něj nepíše a agentovi nic neradí. Takové dokumenty mají vlastníka
+  a historii v gitu.
 - Když úplná hlavička nemá `airine.id`, plugin ho doplní (u `SKILL.md` do `metadata.airine-id`).
   Jinak soubor nemění.
 - Nic neměří a nedělá snímky obrazovky.
