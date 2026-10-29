@@ -17,7 +17,7 @@ airine — plugin Airine pro Claude Code a Cursor
   airine vyres <id>               po sloučení rozporu: další hlášení naváže na verzi v Airine
   airine vrat <id> [<id>…]        vrátí archivované karty mezi platné
   airine obsah [ano|ne]           posílat s kartou i obsah souboru (výchozí ano)
-  airine nahraj-obsah [--koren CESTA]… [--zkouska]
+  airine nahraj-obsah [--koren CESTA]… [--zkouska] [--vypis]
                                   pošle obsah karet, které ho v Airine nemají
   airine mcp                      místní MCP server přes stdio
 """
@@ -187,6 +187,7 @@ case "obsah":
 
 case "nahraj-obsah":
     let zkouska = prepinac("--zkouska")
+    let vypis = prepinac("--vypis")
     var koreny: [URL] = []
     while let k = volba("--koren") { koreny.append(URL(fileURLWithPath: (k as NSString).expandingTildeInPath, isDirectory: true)) }
     let (kopie, n) = otevri()
@@ -198,7 +199,13 @@ case "nahraj-obsah":
         let v = try await Obsah.dohon(kopie: kopie, api: HttpAirine(nastaveni: try Nastaveni.nacti(domov), token: t),
                                       koreny: koreny, zkouska: zkouska)
         print((zkouska ? "Zkouška, nic neodešlo. Poslal bych: " : "Nahráno: ") + "\(v.nahrano)")
-        print("Soubor na tomhle Macu není: \(v.bezSouboru)  na disku je jiná verze: \(v.jinaVerze)  bez práva: \(v.bezPrava)")
+        let pripony = Dictionary(grouping: v.soubory) { URL(fileURLWithPath: $0).pathExtension.lowercased() }
+            .map { "\($0.key): \($0.value.count)" }.sorted().joined(separator: "  ")
+        if !pripony.isEmpty { print("Podle přípony: \(pripony)") }
+        print("Soubor na tomhle Macu není: \(v.bezSouboru)  na disku je jiná verze: \(v.jinaVerze)  nad 1 MB nebo prázdný: \(v.velke)  jiný typ: \(v.jinyTyp)  bez práva: \(v.bezPrava)")
+        // Soubory s tajemstvím odejdou jen jako karta; vypíšou se vždy, ať o nich člověk ví.
+        if !v.tajne.isEmpty { print("Vypadá na tajemství, obsah neodejde (\(v.tajne.count)):"); v.tajne.forEach { print("  \($0)") } }
+        if vypis { print("Soubory:"); v.soubory.forEach { print("  \($0)") } }
         if !v.chyby.isEmpty { print("Neprošlo (\(v.chyby.count)): \(v.chyby.joined(separator: ", "))") }
         if !v.online { print("Airine přestala odpovídat, zbývá \(v.zbyva). Spusť znovu.") }
         if v.neprihlasen { print("Token neplatí nebo nemáš modul Znalosti.") }

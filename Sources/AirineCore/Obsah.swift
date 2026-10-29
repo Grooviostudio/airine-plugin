@@ -19,15 +19,51 @@ public enum Obsah {
         typy[URL(fileURLWithPath: cesta).pathExtension.lowercased()]
     }
 
-    /// Bajty souboru, jen když na disku leží přesně verze `otisk`.
-    public static func nacti(cesta: String, otisk: String) -> (data: Data, mime: String)? {
-        guard let mime = mime(cesta),
-              let atributy = try? FileManager.default.attributesOfItem(atPath: cesta),
+    /// Proč obsah souboru neodejde. Karta jde vždy, bez obsahu.
+    public enum Duvod: String, Error, Sendable {
+        case typ          // přípona, kterou server nebere
+        case velky        // prázdný nebo nad strop
+        case jinaVerze    // bajty na disku nesedí s otiskem karty
+        case tajne        // vypadá to na klíč, heslo nebo token
+    }
+
+    /// Bajty souboru, jen když na disku leží přesně verze `otisk` a není
+    /// v ní nic, co vypadá na tajemství.
+    public static func zkontroluj(cesta: String, otisk: String) -> Result<(data: Data, mime: String), Duvod> {
+        guard let mime = mime(cesta) else { return .failure(.typ) }
+        guard let atributy = try? FileManager.default.attributesOfItem(atPath: cesta),
               (atributy[.type] as? FileAttributeType) == .typeRegular,
-              let velikost = atributy[.size] as? Int, velikost > 0, velikost <= maxBajtu,
-              let data = try? Data(contentsOf: URL(fileURLWithPath: cesta)),
-              Otisk.sha256(data) == otisk.lowercased() else { return nil }
-        return (data, mime)
+              let velikost = atributy[.size] as? Int else { return .failure(.jinaVerze) }
+        guard velikost > 0, velikost <= maxBajtu else { return .failure(.velky) }
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: cesta)),
+              Otisk.sha256(data) == otisk.lowercased() else { return .failure(.jinaVerze) }
+        guard tajemstvi(data).isEmpty else { return .failure(.tajne) }
+        return .success((data, mime))
+    }
+
+    public static func nacti(cesta: String, otisk: String) -> (data: Data, mime: String)? {
+        try? zkontroluj(cesta: cesta, otisk: otisk).get()
+    }
+
+    /// Vzory klíčů, hesel a tokenů. Raději soubor navíc bez obsahu než
+    /// tajemství v Airine: slovo „token“ samo nevadí, vadí s hodnotou.
+    static let vzory: [(String, NSRegularExpression)] = [
+        ("sk-", #"\bsk-[A-Za-z0-9_-]{20,}"#),
+        ("airine_", #"\bairine_[0-9a-f]{40}\b"#),
+        ("github", #"\bgh[pousr]_[A-Za-z0-9]{30,}"#),
+        ("aws", #"\bAKIA[0-9A-Z]{16}\b"#),
+        ("klíč s hodnotou", #"(?i)\b(api[_-]?key|apikey|secret|client[_-]?secret|password|passwd|heslo|token|access[_-]?key)\b["']?\s*[:=]\s*["']?[A-Za-z0-9_\-+/=.]{12,}"#),
+        ("PRIVATE KEY", #"-----BEGIN [A-Z ]*PRIVATE KEY-----"#),
+        ("Bearer", #"\bBearer\s+[A-Za-z0-9._~+/-]{20,}"#),
+        ("JWT", #"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"#),
+        ("dlouhé base64", #"[A-Za-z0-9+/]{80,}={0,2}"#),
+    ].map { ($0.0, try! NSRegularExpression(pattern: $0.1)) }
+
+    /// Názvy vzorů, které v textu sedí.
+    public static func tajemstvi(_ data: Data) -> [String] {
+        let text = String(decoding: data, as: UTF8.self)
+        let rozsah = NSRange(text.startIndex..., in: text)
+        return vzory.filter { $0.1.firstMatch(in: text, range: rozsah) != nil }.map(\.0)
     }
 
     /// Cesta místa na disku tohohle Macu. Relativní cesty (import z prohlížeče)
@@ -60,6 +96,10 @@ public enum Obsah {
         public var nahrano = 0              // obsah odešel do Airine
         public var bezSouboru = 0           // na tomhle Macu soubor není
         public var jinaVerze = 0            // soubor je, ale obsah se od karty liší
+        public var velke = 0                // prázdný nebo nad 1 MB
+        public var jinyTyp = 0              // přípona, kterou server nebere
+        public var tajne: [String] = []     // cesty, které vypadají na tajemství
+        public var soubory: [String] = []   // cesty, jejichž obsah odešel (u zkoušky by odešel)
         public var bezPrava = 0
         public var chyby: [String] = []     // id karet, které neprošly
         public var online = true
@@ -77,12 +117,28 @@ public enum Obsah {
             let cesty = (k.mista ?? []).compactMap(\.cesta).flatMap { naDisku($0, koreny: koreny) }
             let existuje = cesty.filter { FileManager.default.fileExists(atPath: $0) }
             guard !existuje.isEmpty else { v.bezSouboru += 1; continue }
-            guard let (cesta, obsah) = existuje.lazy.compactMap({ c in nacti(cesta: c, otisk: k.otisk!).map { (c, $0) } }).first,
-                  let h = hlaseni(k, cesta: cesta, data: obsah.data) else { v.jinaVerze += 1; continue }
-            if zkouska { v.nahrano += 1; continue }
+            let vysledky = existuje.map { c in (c, zkontroluj(cesta: c, otisk: k.otisk!)) }
+            guard let (cesta, obsah) = vysledky.lazy.compactMap({ c, r in (try? r.get()).map { (c, $0) } }).first,
+                  let h = hlaseni(k, cesta: cesta, data: obsah.data) else {
+                // Tajemství má přednost: o takovém souboru se musí vědět.
+                let duvody = vysledky.compactMap { c, r -> (String, Duvod)? in
+                    if case .failure(let d) = r { return (c, d) }; return nil
+                }
+                if let t = duvody.first(where: { $0.1 == .tajne }) { v.tajne.append(t.0) }
+                else {
+                    switch duvody.first?.1 {
+                    case .velky: v.velke += 1
+                    case .typ: v.jinyTyp += 1
+                    default: v.jinaVerze += 1
+                    }
+                }
+                continue
+            }
+            if zkouska { v.nahrano += 1; v.soubory.append(cesta); continue }
             do {
                 _ = try await api.nahrajObsah(h, data: obsah.data, mime: obsah.mime)
                 v.nahrano += 1
+                v.soubory.append(cesta)
                 var ulozena = k
                 ulozena.ulozeny_otisk = k.otisk
                 try kopie.ulozKarty([ulozena])

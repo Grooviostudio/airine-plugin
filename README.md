@@ -15,9 +15,12 @@ a skills po změně nahlásí do katalogu Airine. Funguje i bez spojení.
   aby ho v Airine četli i kolegové bez souboru. Jen když bajty na disku sedí s otiskem karty;
   jinak jde karta bez obsahu. Vypíná se v liště nebo `airine obsah ne`. Obsah jde do úložiště
   přes jednorázovou adresu od serveru, token Airine úložiště nedostane.
-- `airine nahraj-obsah [--koren CESTA]… [--zkouska]` dožene obsah karet, které ho v Airine
-  ještě nemají (třeba z dřívějšího importu). Posílá jen soubory, jejichž otisk sedí s kartou,
-  popis ani vazby karty nemění. Relativní cesty z importu hledá pod `--koren` a z něj nevyjde.
+- Soubor, ve kterém je něco jako klíč, heslo nebo token s hodnotou (`sk-…`, `api_key: …`,
+  `Bearer …`, soukromý klíč, JWT, dlouhé base64), odejde jen jako karta, obsah nikdy.
+- `airine nahraj-obsah [--koren CESTA]… [--zkouska] [--vypis]` dožene obsah karet, které ho
+  v Airine ještě nemají (třeba z dřívějšího importu). Posílá jen soubory, jejichž otisk sedí
+  s kartou, popis ani vazby karty nemění. Relativní cesty z importu hledá pod `--koren` a z něj
+  nevyjde. Vypíše rozpad podle přípony, soubory s tajemstvím a s `--vypis` i seznam souborů.
 - Místní kopie katalogu je v `~/Library/Application Support/Airine`, každý řádek
   šifrovaný (AES-GCM). Klíč i osobní token jsou v Klíčence.
 - Soubor se hlásí, jen když má v hlavičce jméno (malá písmena a pomlčky), popis a typ.

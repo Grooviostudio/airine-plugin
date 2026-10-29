@@ -718,7 +718,9 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
         _ = try await Synchronizace(kopie: k, api: server).probehni()
 
         let zk = try await Obsah.dohon(kopie: k, api: server, koreny: [koren], zkouska: true)
-        #expect(zk == Obsah.Dohnani(nahrano: 2, bezSouboru: 2, jinaVerze: 1), "„../“ z kořene nevede")
+        var bezPoradi = zk; bezPoradi.soubory.sort()
+        #expect(bezPoradi == Obsah.Dohnani(nahrano: 2, bezSouboru: 2, jinaVerze: 1,
+                                           soubory: [shodny, koren.appendingPathComponent("Klienti/c.md").path].sorted()), "„../“ z kořene nevede")
         #expect(await !server.maObsah("a"), "zkouška nic neposílá")
 
         let v = try await Obsah.dohon(kopie: k, api: server, koreny: [koren])
@@ -769,8 +771,49 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
         #expect(Obsah.nacti(cesta: c, otisk: Otisk.sha256(Data("Y\n".utf8))) == nil)
         let png = try soubor(d, "x.png", "X\n")
         #expect(Obsah.nacti(cesta: png, otisk: Otisk.sha256(Data("X\n".utf8))) == nil, "server bere jen text")
-        let velky = try soubor(d, "v.md", String(repeating: "a", count: Obsah.maxBajtu + 1))
+        let velky = try soubor(d, "v.md", String(repeating: "a ", count: Obsah.maxBajtu / 2 + 1))
         #expect(Obsah.nacti(cesta: velky, otisk: Otisk.sha256(try Data(contentsOf: URL(fileURLWithPath: velky)))) == nil)
+        if case .failure(let duvod) = Obsah.zkontroluj(cesta: velky, otisk: "x") { #expect(duvod == .velky) } else { Issue.record("velký prošel") }
+    }
+
+    @Test func tajemstviNeodejdou() async throws {
+        let tajne = [
+            "OPENAI=sk-proj-abcdefghijklmnopqrstuv1234",
+            "klic: airine_" + String(repeating: "a1", count: 20),
+            "api_key = \"Zx81kQpLmN0vB7rT\"",
+            "Heslo: Velbloud.2026.Praha",
+            "-----BEGIN OPENSSH PRIVATE KEY-----",
+            "Authorization: Bearer abcdefghijklmnopqrstuvwxyz012345",
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
+            String(repeating: "QUJD", count: 25),
+        ]
+        for t in tajne { #expect(!Obsah.tajemstvi(Data(t.utf8)).isEmpty, "\(t)") }
+        let nevinne = [
+            "Design tokeny: barvy jsou token --blue a --ink.",
+            "token: var(--blue)",
+            "Heslo nikdy nepiš do briefu, patří do Klíčenky.",
+            "Bearer token se posílá v hlavičce.",
+            "otisk 3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b",
+        ]
+        for t in nevinne { #expect(Obsah.tajemstvi(Data(t.utf8)).isEmpty, "\(t)") }
+
+        // Dohnání soubor s tajemstvím vypíše a obsah nepošle; karta zůstane.
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        let text = "# Přístupy\napi_key: Zx81kQpLmN0vB7rT\n"
+        let cesta = try soubor(d, "pristupy.md", text)
+        var karta = Karta(id: "t", name: "t", popis: "T", typ: "zapis", otisk: Otisk.sha256(Data(text.utf8)), mista: [Misto(cesta: cesta)])
+        karta.menit = true
+        await server.pridej(karta)
+        _ = try await Synchronizace(kopie: k, api: server).probehni()
+        let v = try await Obsah.dohon(kopie: k, api: server)
+        #expect(v.nahrano == 0 && v.tajne == [cesta])
+        #expect(await !server.maObsah("t"))
+
+        // Ani běžné hlášení z hooku obsah s tajemstvím nepošle.
+        try Nahlasovani(kopie: k).nahlas(cesta: try soubor(d, "brief.md", briefText + "token = ghp_" + String(repeating: "A", count: 36) + "\n"))
+        let s = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(s.odeslano == 1 && s.obsahu == 0)
+        #expect(await !server.maObsah("ob1"))
     }
 }
 
