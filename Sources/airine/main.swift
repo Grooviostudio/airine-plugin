@@ -19,7 +19,7 @@ airine — plugin Airine pro Claude Code a Cursor
   airine obsah [ano|ne]           posílat s kartou i obsah souboru (výchozí ano)
   airine vynech [VZOR…] [--zrus VZOR]
                                   složky, jejichž obsah nikdy neodejde (jen karta)
-  airine nahraj-obsah [--koren CESTA]… [--vynech VZOR]… [--zkouska] [--vypis]
+  airine nahraj-obsah [--koren CESTA]… [--vynech VZOR]… [--pauza MS] [--zkouska] [--vypis]
                                   pošle obsah karet, které ho v Airine nemají
   airine mcp                      místní MCP server přes stdio
 """
@@ -201,6 +201,7 @@ case "vynech":
 case "nahraj-obsah":
     let zkouska = prepinac("--zkouska")
     let vypis = prepinac("--vypis")
+    let pauza = Duration.milliseconds(Int(volba("--pauza") ?? "") ?? 500)
     var nove: [String] = []
     while let v = volba("--vynech") { nove.append(v) }
     if !nove.isEmpty {
@@ -221,7 +222,7 @@ case "nahraj-obsah":
         _ = try await Synchronizace.spust(domov: domov, kopie: kopie) { HttpAirine(nastaveni: $0, token: t) }
         let m = try Nastaveni.nacti(domov)
         let v = try await Obsah.dohon(kopie: kopie, api: HttpAirine(nastaveni: m, token: t),
-                                      koreny: koreny, vynechat: m.vynechatObsah, zkouska: zkouska)
+                                      koreny: koreny, vynechat: m.vynechatObsah, zkouska: zkouska, pauza: pauza)
         print((zkouska ? "Zkouška, nic neodešlo. Poslal bych: " : "Nahráno: ") + "\(v.nahrano)")
         let pripony = Dictionary(grouping: v.soubory) { URL(fileURLWithPath: $0).pathExtension.lowercased() }
             .map { "\($0.key): \($0.value.count)" }.sorted().joined(separator: "  ")

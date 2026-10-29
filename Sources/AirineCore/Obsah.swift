@@ -124,8 +124,9 @@ public enum Obsah {
 
     /// Karty, jejichž obsah Airine nemá, a jejich bajty na tomhle Macu.
     /// Archivované a cizí karty přeskočí. `zkouska` jen spočítá, nic neposílá.
+    /// `pauza` mezi soubory šetří úložiště serveru (to při rychlé dávce vrací 429).
     public static func dohon(kopie: Kopie, api: AirineAPI, koreny: [URL] = [], vynechat: [String] = [],
-                             zkouska: Bool = false) async throws -> Dohnani {
+                             zkouska: Bool = false, pauza: Duration = .zero) async throws -> Dohnani {
         var v = Dohnani()
         let karty = try kopie.karty().filter { $0.smazano != true && $0.bez_prava != true && !$0.archivovana && $0.neniVAirine && $0.otisk != nil }
         for (i, k) in karty.enumerated() {
@@ -156,6 +157,7 @@ public enum Obsah {
                 _ = try await api.nahrajObsah(h, data: obsah.data, mime: obsah.mime)
                 v.nahrano += 1
                 v.soubory.append(cesta)
+                if pauza > .zero { try await Task.sleep(for: pauza) }
                 var ulozena = k
                 ulozena.ulozeny_otisk = k.otisk
                 try kopie.ulozKarty([ulozena])

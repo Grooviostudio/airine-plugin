@@ -19,7 +19,7 @@ a skills po změně nahlásí do katalogu Airine. Funguje i bez spojení.
   `Bearer …`, soukromý klíč, JWT, dlouhé base64), odejde jen jako karta, obsah nikdy.
 - `airine vynech VZOR…` trvale vynechá obsah celých složek, odejde z nich jen karta
   ([docs/vynechani.md](docs/vynechani.md)).
-- `airine nahraj-obsah [--koren CESTA]… [--vynech VZOR]… [--zkouska] [--vypis]` dožene obsah karet, které ho
+- `airine nahraj-obsah [--koren CESTA]… [--vynech VZOR]… [--pauza MS] [--zkouska] [--vypis]` dožene obsah karet, které ho
   v Airine ještě nemají (třeba z dřívějšího importu). Posílá jen soubory, jejichž otisk sedí
   s kartou, popis ani vazby karty nemění. Relativní cesty z importu hledá pod `--koren` a z něj
   nevyjde. Vypíše rozpad podle přípony, soubory s tajemstvím a s `--vypis` i seznam souborů.
