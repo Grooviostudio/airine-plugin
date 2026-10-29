@@ -20,6 +20,7 @@ public struct Synchronizace: Sendable {
         public var ciziZarizeni = false          // volající si vezme nové uuid a spustí znovu
         public var smazanych = 0                 // hlášení karet, které jsou v Airine smazané
         public var nesoulad: [String] = []       // id karet, kde se hlášení liší od hlavičky souboru
+        public var prevzate: [String] = []       // id existujících karet, které soubor převzal
     }
 
     /// Běh se vším, co potřebuje lišta i příkaz: když server řekne, že uuid
@@ -55,6 +56,10 @@ public struct Synchronizace: Sendable {
                 }
                 if !(o.hlavicka ?? []).isEmpty { v.nesoulad.append(p.hlaseni.id) }
                 try kopie.odeslano(p.hlaseni)
+                if o.prevzato == true && o.id != p.hlaseni.id {
+                    try prevezmi(p.hlaseni, id: o.id, otisk: o.otisk ?? p.hlaseni.otisk)
+                    v.prevzate.append(o.id)
+                }
                 v.odeslano += 1
             } catch ChybaServeru.odmitnuto(let o) {
                 try kopie.odmitnuto(p.hlaseni, o)
@@ -82,6 +87,21 @@ public struct Synchronizace: Sendable {
                 return
             }
         }
+    }
+
+    /// Server poznal týž soubor jako existující kartu a vrátil její id. Id
+    /// vygenerované pluginem zmizí z hlavičky i z místní kopie. Do souboru se
+    /// píše jen tehdy, když v hlavičce pořád stojí staré id (agent mohl soubor
+    /// mezitím přepsat). Další hlášení naváže na verzi serveru: změněná
+    /// hlavička je pak běžná nová verze, ne rozpor.
+    func prevezmi(_ h: Hlaseni, id: String, otisk: String) throws {
+        try kopie.prevzato(stare: h.id, nove: id, otisk: otisk)
+        guard let cesta = h.cesta else { return }
+        let url = URL(fileURLWithPath: cesta)
+        guard let data = try? Data(contentsOf: url), let obsah = String(data: data, encoding: .utf8),
+              let upraveny = Hlavicka.nahradId(obsah, stare: h.id, nove: id) else { return }
+        guard (try? Data(contentsOf: url)) == data else { return }
+        try Data(upraveny.utf8).write(to: url, options: .atomic)
     }
 
     func stahni(_ v: inout Vysledek) async throws {

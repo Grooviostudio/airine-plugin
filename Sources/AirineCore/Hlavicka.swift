@@ -209,6 +209,28 @@ public struct Hlavicka: Sendable, Equatable {
         }
         return (["---"] + radky + ["---"]).joined(separator: "\n") + "\n" + telo
     }
+
+    /// Vymění id karty v hlavičce (`airine.id`, u SKILL.md `metadata.airine-id`).
+    /// Mění jen ten jeden řádek; nil, když hlavička id `stare` nenese.
+    public static func nahradId(_ obsah: String, stare: String, nove: String) -> String? {
+        // Hranice hlavičky jako `rozdel`; ostatní řádky (i oddělovače) zůstanou bajt po bajtu.
+        guard obsah.hasPrefix("---\n") || obsah.hasPrefix("---\r\n") else { return nil }
+        var radky = obsah.components(separatedBy: "\n")
+        guard let konec = radky.dropFirst().firstIndex(where: { $0.trimmingCharacters(in: .whitespacesAndNewlines) == "---" }) else { return nil }
+        var sekce: String?
+        for i in 1..<konec {
+            let radek = radky[i]
+            let r = radek.trimmingCharacters(in: .whitespacesAndNewlines)
+            if r.isEmpty || r.hasPrefix("#") { continue }
+            let (k, v) = klicHodnota(r)
+            if !radek.hasPrefix(" ") { sekce = v.isEmpty ? k : nil; continue }
+            let klic = sekce == "airine" ? "id" : sekce == "metadata" ? "airine-id" : nil
+            guard let klic, k == klic, v == stare else { continue }
+            radky[i] = String(radek.prefix { $0 == " " }) + "\(klic): \(nove)" + (radek.hasSuffix("\r") ? "\r" : "")
+            return radky.joined(separator: "\n")
+        }
+        return nil
+    }
 }
 
 public enum Otisk {

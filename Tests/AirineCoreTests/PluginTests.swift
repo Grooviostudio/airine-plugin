@@ -18,6 +18,9 @@ actor MockServer: AirineAPI {
     var smazane: Set<String> = []
     func nastavCizi(_ z: String) { ciziZarizeni.insert(z) }
     func smaz(_ id: String) { smazane.insert(id) }
+    /// Týž soubor už má kartu (nahrání v prohlížeči): otisk → id té karty.
+    var prevzeti: [String: String] = [:]
+    func prevezmi(otisk: String, id: String) { prevzeti[otisk] = id }
 
     func nastav(online: Bool) { self.online = online }
     func odeberPravo(_ id: String) { bezPrava.insert(id); zmena(id) }
@@ -49,6 +52,9 @@ actor MockServer: AirineAPI {
         if let z = zarizeni, ciziZarizeni.contains(z) { throw ChybaServeru.ciziZarizeni }
         if smazane.contains(h.id) { throw ChybaServeru.smazano }
         if h.name == nil || h.name!.isEmpty { throw ChybaServeru.odmitnuto(Odmitnuti(chyby: [ChybaPole(pole: "name", zprava: "chybí", kod: "chybi")])) }
+        if karty[h.id] == nil, let id = prevzeti[h.otisk], let k = karty[id] {
+            return OdpovedHlaseni(stav: .uz_prijato, id: id, otisk: k.otisk, verze: verze[id]?.count, prevzato: true)
+        }
         if verze[h.id]?.contains(h.otisk) == true { return OdpovedHlaseni(stav: .uz_prijato, id: h.id, otisk: h.otisk) }
         var k = karty[h.id] ?? Karta(id: h.id, name: h.name ?? "")
         let rozpor = k.otisk != nil && h.otisk_predchozi != k.otisk
@@ -120,6 +126,66 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
     }
 
     @Test func bezHlavickyNicNecte() { #expect(Hlavicka.precti("# jen text").text == nil) }
+
+    @Test func nahrazeniIdMeniJenRadekId() {
+        let telo = "# Nadpis\n\nid: n1 v textu zůstane\n"
+        let s = "---\nname: x\nid: n1\nairine:\n  id: n1\n  typ: brief\n---\n" + telo
+        let v = Hlavicka.nahradId(s, stare: "n1", nove: "k9")
+        #expect(v == "---\nname: x\nid: n1\nairine:\n  id: k9\n  typ: brief\n---\n" + telo)
+
+        let skill = "---\r\nname: nabidka\r\nmetadata:\r\n  airine-id: \"s1\"\r\n---\r\nText\r\n"
+        #expect(Hlavicka.nahradId(skill, stare: "s1", nove: "s2") == "---\r\nname: nabidka\r\nmetadata:\r\n  airine-id: s2\r\n---\r\nText\r\n")
+
+        #expect(Hlavicka.nahradId(s, stare: "jine", nove: "k9") == nil)
+        #expect(Hlavicka.nahradId(telo, stare: "n1", nove: "k9") == nil)
+    }
+}
+
+@Suite struct PrevzetiTests {
+    /// Soubor nahraný v prohlížeči a pak nahlášený pluginem (243): server vrátí
+    /// existující kartu a plugin ji převezme do hlavičky i do místní kopie.
+    @Test func prevzataKartaPrepiseIdVHlavickceIKopii() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        let n = Nahlasovani(kopie: k)
+        let telo = "# Brief\n\nText.\n"
+        let cesta = try soubor(d, "brief.md", "---\nname: brief\ndescription: Brief\nairine:\n  typ: brief\n---\n" + telo)
+        guard case .zarazeno(let vlastni, let otisk) = try n.nahlas(cesta: cesta) else { Issue.record("nezařazeno"); return }
+        await server.pridej(Karta(id: "k-web", name: "brief", otisk: otisk))
+        await server.prevezmi(otisk: otisk, id: "k-web")
+
+        let v = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(v.prevzate == ["k-web"] && v.odeslano == 1)
+        let obsah = try String(contentsOfFile: cesta, encoding: .utf8)
+        #expect(Hlavicka.precti(obsah).airine["id"] == "k-web")
+        #expect(obsah.hasSuffix(telo) && !obsah.contains(vlastni))
+        let otisky = try k.stav("otisky", [String: String].self) ?? [:]
+        #expect(otisky["k-web"] == otisk && otisky[vlastni] == nil)
+        #expect(try k.fronta().isEmpty)
+        #expect(await server.pocetVerzi(vlastni) == 0)
+
+        // Změněná hlavička je další verze téže karty, bez rozporu.
+        guard case .zarazeno(let id, _) = try n.nahlas(cesta: cesta) else { Issue.record("nezařazeno"); return }
+        #expect(id == "k-web")
+        let v2 = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(v2.rozpory.isEmpty && v2.prevzate.isEmpty)
+        #expect(await server.pocetVerzi("k-web") == 2)
+    }
+
+    /// Agent soubor mezitím přepsal a staré id v hlavičce už není: soubor se nemění.
+    @Test func souborBezStarehoIdSeNemeni() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        let n = Nahlasovani(kopie: k)
+        let cesta = try soubor(d, "brief.md", "---\nname: brief\ndescription: Brief\nairine:\n  typ: brief\n---\nA\n")
+        guard case .zarazeno(_, let otisk) = try n.nahlas(cesta: cesta) else { Issue.record("nezařazeno"); return }
+        await server.pridej(Karta(id: "k-web", name: "brief", otisk: otisk))
+        await server.prevezmi(otisk: otisk, id: "k-web")
+        let jiny = "---\nname: brief\ndescription: Brief\nairine:\n  id: rucne\n  typ: brief\n---\nB\n"
+        try jiny.write(toFile: cesta, atomically: true, encoding: .utf8)
+
+        let v = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(v.prevzate == ["k-web"])
+        #expect(try String(contentsOfFile: cesta, encoding: .utf8) == jiny)
+    }
 }
 
 @Suite struct OfflineTests {

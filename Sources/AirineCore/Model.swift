@@ -223,9 +223,12 @@ public struct OdpovedHlaseni: Codable, Sendable {
     public var rozpor: Bool?
     public var ulozeny_otisk: String?
     public var hlavicka: [NesouladHlavicky]?
+    /// Týž soubor už v Airine kartu má (třeba z nahrání v prohlížeči): server
+    /// nezaložil novou a `id` je id té existující. Plugin ho zapíše do hlavičky.
+    public var prevzato: Bool?
 
-    public init(stav: StavHlaseni, id: String, otisk: String? = nil, verze: Int? = nil, rozpor: Bool? = nil) {
-        self.stav = stav; self.id = id; self.otisk = otisk; self.verze = verze; self.rozpor = rozpor
+    public init(stav: StavHlaseni, id: String, otisk: String? = nil, verze: Int? = nil, rozpor: Bool? = nil, prevzato: Bool? = nil) {
+        self.stav = stav; self.id = id; self.otisk = otisk; self.verze = verze; self.rozpor = rozpor; self.prevzato = prevzato
     }
 }
 

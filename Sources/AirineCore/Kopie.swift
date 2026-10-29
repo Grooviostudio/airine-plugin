@@ -165,6 +165,24 @@ public final class Kopie: @unchecked Sendable {
         }
     }
 
+    /// Soubor převzal existující kartu (`prevzato` v odpovědi serveru): poslední
+    /// nahlášená verze patří pod nové id a čekající hlášení se přejmenují.
+    public func prevzato(stare: String, nove: String, otisk: String) throws {
+        var otisky = try stav("otisky", [String: String].self) ?? [:]
+        otisky[stare] = nil
+        otisky[nove] = otisk
+        let cekajici = try fronta(vcetneOdmitnutych: true).filter { $0.hlaseni.id == stare }
+        try db.transakce {
+            try nastavStav("otisky", otisky)
+            try db.proved("DELETE FROM fronta WHERE klic LIKE ?", [.text("\(stare):%")])
+            for p in cekajici {
+                var h = p.hlaseni
+                h.id = nove
+                try zaradit(h)
+            }
+        }
+    }
+
     public func jeSmazana(_ id: String) throws -> Bool {
         (try stav("smazane", [String].self) ?? []).contains(id)
     }
