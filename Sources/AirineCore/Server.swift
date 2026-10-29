@@ -5,6 +5,8 @@ import Foundation
 public protocol AirineAPI: Sendable {
     func zmeny(od kurzor: String?, limit: Int) async throws -> Zmeny
     func nahlas(_ h: Hlaseni) async throws -> OdpovedHlaseni
+    /// Archiv karet (POST /api/katalog/archiv): všechno, nebo nic. Vrací počet změněných.
+    func archiv(karty: [String], archivovat: Bool) async throws -> Int
 }
 
 public enum ChybaServeru: Error, Equatable {
@@ -103,5 +105,17 @@ public struct HttpAirine: AirineAPI {
         let (data, kod) = try await posli(r)
         guard (200..<300).contains(kod) else { throw Self.chybaHlaseni(data, kod) }
         return try JSONDecoder().decode(OdpovedHlaseni.self, from: data)
+    }
+
+    public func archiv(karty: [String], archivovat: Bool) async throws -> Int {
+        let telo = try JSONSerialization.data(withJSONObject: ["karty": karty, "archivovat": archivovat])
+        let (data, kod) = try await posli(pozadavek("api/katalog/archiv", metoda: "POST", telo: telo))
+        switch kod {
+        case 200..<300:
+            return ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["zmeneno"] as? Int ?? 0
+        case 403: throw ChybaServeru.bezPravaKarty
+        case 422: throw ChybaServeru.odmitnuto(Odmitnuti(chyby: [ChybaPole(pole: "karty", zprava: "neplatné id karty", kod: "tvar")]))
+        default: throw Self.neocekavany(data, kod)
+        }
     }
 }

@@ -66,6 +66,18 @@ actor MockServer: AirineAPI {
     }
 
     func pocetVerzi(_ id: String) -> Int { verze[id]?.count ?? 0 }
+
+    /// Jako `katalog_archivuj()`: jen stav karty, hlášení archiv nemění.
+    func archiv(karty ids: [String], archivovat: Bool) async throws -> Int {
+        guard online else { throw ChybaServeru.bezSpojeni }
+        guard ids.allSatisfy({ karty[$0] != nil && !bezPrava.contains($0) }) else { throw ChybaServeru.bezPravaKarty }
+        var n = 0
+        for id in ids where (karty[id]!.archivovano_at != nil) != archivovat {
+            karty[id]!.archivovano_at = archivovat ? "2026-10-29T15:00:00Z" : nil
+            zmena(id); n += 1
+        }
+        return n
+    }
 }
 
 /// Klient jednoho zařízení: jako HttpAirine nese zařízení mimo tělo hlášení.
@@ -74,6 +86,7 @@ struct ZarizeniMock: AirineAPI {
     let zarizeni: String
     func zmeny(od kurzor: String?, limit: Int) async throws -> Zmeny { try await server.zmeny(od: kurzor, limit: limit) }
     func nahlas(_ h: Hlaseni) async throws -> OdpovedHlaseni { try await server.nahlas(h, zarizeni: zarizeni) }
+    func archiv(karty: [String], archivovat: Bool) async throws -> Int { try await server.archiv(karty: karty, archivovat: archivovat) }
 }
 
 func docasnyDomov() throws -> Domov {
@@ -333,6 +346,50 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
     }
 }
 
+@Suite struct ArchivTests {
+    let hlavicka = "---\nname: styl\ndescription: d\nairine:\n  typ: pravidla\n  id: a2\n---\n"
+
+    @Test func archivovanaZustaneVKopiiANedoporucujeSe() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        await server.pridej(Karta(id: "a1", name: "styl", typ: "pravidla", otisk: "o1"))
+        await server.pridej(Karta(id: "a2", name: "styl", typ: "pravidla", otisk: "o1"))
+        _ = try await server.archiv(karty: ["a2"], archivovat: true)
+        _ = try await Synchronizace(kopie: k, api: server).probehni()
+
+        #expect(try k.karta("a2")?.archivovana == true)
+        let dop = try Doporuceni(kopie: k, projekt: nil)
+        #expect(dop.platne.map(\.id) == ["a1"] && dop.archivovane.map(\.id) == ["a2"])
+        #expect(dop.text().contains("Archivované") && dop.text().contains("airine vrat"))
+    }
+
+    @Test func zmenaSouboruKartuNeobnoviANezalozi() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        let cesta = try soubor(d, "styl.md", hlavicka + "x\n")
+        try Nahlasovani(kopie: k).nahlas(cesta: cesta)
+        _ = try await Synchronizace(kopie: k, api: server).probehni()
+        _ = try await server.archiv(karty: ["a2"], archivovat: true)
+        _ = try await Synchronizace(kopie: k, api: server).probehni()
+
+        try (hlavicka + "y\n").write(toFile: cesta, atomically: true, encoding: .utf8)
+        guard case .zarazeno(let id, _) = try Nahlasovani(kopie: k).nahlas(cesta: cesta) else { Issue.record("nezařazeno"); return }
+        #expect(id == "a2")                                   // stejná karta, ne nová
+        _ = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(await server.karty.count == 1)
+        #expect(try k.karta("a2")?.archivovana == true)      // hlášení archiv nezruší
+    }
+
+    @Test func vraceniZArchivu() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        await server.pridej(Karta(id: "a2", name: "styl", typ: "pravidla", otisk: "o1"))
+        _ = try await server.archiv(karty: ["a2"], archivovat: true)
+        _ = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(try await server.archiv(karty: ["a2"], archivovat: false) == 1)
+        _ = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(try Doporuceni(kopie: k, projekt: nil).platne.map(\.id) == ["a2"])
+        #expect(try await server.archiv(karty: ["a2"], archivovat: false) == 0)
+    }
+}
+
 /// Tvar JSON podle serveru (routes/katalog.js, SQL katalog_zmeny a katalog_hlaseni).
 @Suite struct KontraktTests {
     @Test func zmenyZeServeru() throws {
@@ -345,12 +402,14 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
            "slozka_id":null,"vlastnik_id":"u1","nahrazuje_id":"a0","vychazi_z":["a5"],"fakta":{"sazba":"1200"},
            "otisk":"o2","verze":3,"ulozeny_otisk":"o1","rozpor":false,"zmenil_id":"u1","smazano_at":null,
            "created_at":"2026-10-27T08:00:00Z","updated_at":"2026-10-27T09:00:00Z","cist":true,"menit":false,
-           "vlastnik_jmeno":"Eva","mista":[{"zarizeni_id":"z1","cesta":"/x/brief.md","otisk":"o2","videno_at":"2026-10-27T09:00:00Z"}]}
+           "vlastnik_jmeno":"Eva","mista":[{"zarizeni_id":"z1","cesta":"/x/brief.md","otisk":"o2","videno_at":"2026-10-27T09:00:00Z"}]},
+          {"id":"a6","name":"brief","typ":"brief","otisk":"o2","archivovano_at":"2026-10-29T15:00:00Z","archivoval_id":"u1","cist":true,"menit":true,"mista":[]}
         ],"dalsi":false,"kurzor":"2026-10-27T09:00:00Z|a4","navod_zmenen":true,
          "navod":{"verze":2,"vlastni":false,"obsah":{"verze":1,"pravidla":["Hlas soubory po změně."],"typy":["brief","skill"]},"vychozi_prava":{}}}
         """#
         let z = try JSONDecoder().decode(Zmeny.self, from: Data(json.utf8))
-        #expect(z.karty.count == 4 && z.karty[0].smazano == true && z.karty[1].bez_prava == true)
+        #expect(z.karty.count == 5 && z.karty[4].archivovana && !z.karty[3].archivovana)
+        #expect(z.karty[0].smazano == true && z.karty[1].bez_prava == true)
         #expect(z.karty[2].vlastnik_jmeno == "Eva")
         let k = z.karty[3]
         #expect(k.klient_id == "c1" && k.projekt_id == "p1" && k.nahrazuje == "a0")

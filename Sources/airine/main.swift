@@ -15,6 +15,7 @@ airine — plugin Airine pro Claude Code a Cursor
   airine doporuceni [--cwd CESTA] [--vse] [--hook]
   airine nahlas <cesta> | --hook  zařadí soubor do fronty hlášení
   airine vyres <id>               po sloučení rozporu: další hlášení naváže na verzi v Airine
+  airine vrat <id> [<id>…]        vrátí archivované karty mezi platné
   airine mcp                      místní MCP server přes stdio
 """
 
@@ -154,6 +155,20 @@ case "vyres":
     let (kopie, _) = otevri()
     do { try Nahlasovani(kopie: kopie).vyresRozpor(id: id) } catch { chyba("\(error)") }
     print("Další hlášení \(id) naváže na verzi v Airine. Ulož sloučený soubor znovu.")
+
+case "vrat":
+    guard !argumenty.isEmpty else { chyba("airine vrat <id> [<id>…]") }
+    let (kopie, n) = otevri()
+    guard let a = api(n), let t = token() else { chyba("Nejsi přihlášený: airine prihlas") }
+    do {
+        let zmeneno = try await a.archiv(karty: argumenty, archivovat: false)
+        _ = try await Synchronizace.spust(domov: domov, kopie: kopie) { HttpAirine(nastaveni: $0, token: t) }
+        print(zmeneno == 0 ? "Nic k vrácení, karty nejsou archivované." : "Vráceno z archivu: \(zmeneno).")
+    } catch ChybaServeru.bezPravaKarty {
+        chyba("Některou z karet nesmíš měnit, nevrátilo se nic. Požádej vlastníka.")
+    } catch ChybaServeru.bezSpojeni {
+        chyba("Airine neodpovídá, zkus to znovu.")
+    } catch { chyba("Vrácení selhalo: \(error)") }
 
 case "mcp":
     let (kopie, _) = otevri()

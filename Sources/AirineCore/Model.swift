@@ -21,6 +21,9 @@ public struct Misto: Codable, Hashable, Sendable {
 /// - bez práva čtení: `{id, name, vlastnik_id, vlastnik_jmeno, bez_prava: true}`
 ///   (klient dostane jen `{id, bez_prava: true}`),
 /// - plná karta s `cist`, `menit` a `mista`.
+/// Archivovaná karta (duplicita, kterou člověk v Airine schoval) přijde jako
+/// plná karta s `archivovano_at`. V kopii zůstane, jen se nedoporučuje.
+/// Hlášení souboru s jejím id ji neobnoví ani nezaloží znovu.
 public struct Karta: Codable, Hashable, Sendable, Identifiable {
     public var id: String
     public var name: String?
@@ -46,10 +49,12 @@ public struct Karta: Codable, Hashable, Sendable, Identifiable {
     public var mista: [Misto]?
     public var smazano: Bool?
     public var bez_prava: Bool?
+    public var archivovano_at: String?
 
     enum CodingKeys: String, CodingKey {
         case id, name, popis, typ, slozka_id, vlastnik_id, vlastnik_jmeno, vychazi_z, fakta, otisk, verze,
-             ulozeny_otisk, rozpor, zmenil_id, created_at, updated_at, cist, menit, mista, smazano, bez_prava
+             ulozeny_otisk, rozpor, zmenil_id, created_at, updated_at, cist, menit, mista, smazano, bez_prava,
+             archivovano_at
         case klient_id = "contact_id"
         case projekt_id = "project_id"
         case nahrazuje = "nahrazuje_id"
@@ -68,6 +73,7 @@ public struct Karta: Codable, Hashable, Sendable, Identifiable {
     /// Stejné signály jako serverové `doporuceni()`.
     public var jenNaJednomZarizeni: Bool { Set((mista ?? []).compactMap(\.zarizeni_id)).count == 1 }
     public var neniVAirine: Bool { ulozeny_otisk != otisk }
+    public var archivovana: Bool { archivovano_at != nil }
 }
 
 /// Návod firmy pro agenty. Server posílá `obsah` jako objekt (výchozí

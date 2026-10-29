@@ -8,6 +8,7 @@ public struct Doporuceni: Sendable {
     public let platne: [Karta]
     public let nahrazene: [Karta]
     public let bezPrava: [Karta]
+    public let archivovane: [Karta]
     public let stavK: Date?
     public let navod: Navod?
 
@@ -16,7 +17,7 @@ public struct Doporuceni: Sendable {
         let vsechny = try kopie.karty()
         // Server „nahrazeno“ neposílá: karta je nahrazená, když na ni jiná živá
         // karta ukazuje přes nahrazuje (stejně jako `doporuceni()` v lib/katalog.js).
-        let nahrazenaId = Set(vsechny.filter { $0.bez_prava != true }.compactMap(\.nahrazuje))
+        let nahrazenaId = Set(vsechny.filter { $0.bez_prava != true && !$0.archivovana }.compactMap(\.nahrazuje))
         // Jako server: k projektu patří i karty bez projektu u jeho klienta.
         // Klienta projektu plugin pozná z vlastních karet (contact_id kterékoli
         // karty s tím projektem); bez takové karty klientské karty vynechá.
@@ -24,9 +25,14 @@ public struct Doporuceni: Sendable {
         let vse = vsechny.filter {
             projekt == nil || $0.projekt_id == projekt || ($0.projekt_id == nil && klient != nil && $0.klient_id == klient)
         }
-        platne = vse.filter { $0.bez_prava != true && !nahrazenaId.contains($0.id) }
+        // Archivovaná karta je duplicita, kterou člověk schoval: agent ji nemá
+        // používat, jen vědět, že ji jde vrátit.
+        let zive = vse.filter { !$0.archivovana }
+        platne = zive.filter { $0.bez_prava != true && !nahrazenaId.contains($0.id) }
             .sorted { ($0.updated_at ?? "") > ($1.updated_at ?? "") }
-        nahrazene = vse.filter { $0.bez_prava != true && nahrazenaId.contains($0.id) }
+        nahrazene = zive.filter { $0.bez_prava != true && nahrazenaId.contains($0.id) }
+        archivovane = vse.filter { $0.archivovana && $0.bez_prava != true }
+            .sorted { ($0.archivovano_at ?? "") > ($1.archivovano_at ?? "") }
         bezPrava = vse.filter { $0.bez_prava == true }
         stavK = kopie.posledniSynchronizace
         navod = kopie.navod
@@ -59,6 +65,11 @@ public struct Doporuceni: Sendable {
         }
         if platne.count > 40 { r.append("… a dalších \(platne.count - 40), vypíše `airine doporuceni --vse`") }
         for k in bezPrava.prefix(10) { r.append("- \(k.name ?? "soubor"): bez přístupu, požádej o něj \(k.vlastnik_jmeno ?? "vlastníka")") }
+        if !archivovane.isEmpty {
+            r.append("Archivované (duplicity, nepoužívat; vrátí je `airine vrat <id>`): "
+                     + archivovane.prefix(10).map { "\($0.name ?? "soubor") (\($0.id))" }.joined(separator: ", ")
+                     + (archivovane.count > 10 ? " a dalších \(archivovane.count - 10)" : ""))
+        }
         if fronta > 0 { r.append("Čeká na odeslání do Airine: \(fronta) hlášení.") }
         if let n = navod { r.append("\n## Návod firmy pro agenty (verze \(n.verze))\n\(n.obsah)") }
         return r.joined(separator: "\n")
