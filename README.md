@@ -17,7 +17,9 @@ a skills po změně nahlásí do katalogu Airine. Funguje i bez spojení.
   přes jednorázovou adresu od serveru, token Airine úložiště nedostane.
 - Soubor, ve kterém je něco jako klíč, heslo nebo token s hodnotou (`sk-…`, `api_key: …`,
   `Bearer …`, soukromý klíč, JWT, dlouhé base64), odejde jen jako karta, obsah nikdy.
-- `airine nahraj-obsah [--koren CESTA]… [--zkouska] [--vypis]` dožene obsah karet, které ho
+- `airine vynech VZOR…` trvale vynechá obsah celých složek, odejde z nich jen karta
+  ([docs/vynechani.md](docs/vynechani.md)).
+- `airine nahraj-obsah [--koren CESTA]… [--vynech VZOR]… [--zkouska] [--vypis]` dožene obsah karet, které ho
   v Airine ještě nemají (třeba z dřívějšího importu). Posílá jen soubory, jejichž otisk sedí
   s kartou, popis ani vazby karty nemění. Relativní cesty z importu hledá pod `--koren` a z něj
   nevyjde. Vypíše rozpad podle přípony, soubory s tajemstvím a s `--vypis` i seznam souborů.
@@ -40,7 +42,7 @@ a skills po změně nahlásí do katalogu Airine. Funguje i bez spojení.
 | Cesta | Co to je |
 |---|---|
 | `Sources/AirineCore` | Místní kopie (SQLite), fronta hlášení, synchronizace, hlavičky, doporučení, místní MCP |
-| `Sources/airine` | Příkaz `airine`: hooky, `sync`, `stav`, `propoj`, `vyres`, `obsah`, `nahraj-obsah`, `mcp` |
+| `Sources/airine` | Příkaz `airine`: hooky, `sync`, `stav`, `propoj`, `vyres`, `obsah`, `vynech`, `nahraj-obsah`, `mcp` |
 | `Sources/AirineLista` | Aplikace v liště (SwiftUI `MenuBarExtra`) |
 | `claude-plugin` | Plugin pro Claude Code: hooky SessionStart a PostToolUse, MCP server `airine mcp` |
 

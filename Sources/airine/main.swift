@@ -17,7 +17,9 @@ airine — plugin Airine pro Claude Code a Cursor
   airine vyres <id>               po sloučení rozporu: další hlášení naváže na verzi v Airine
   airine vrat <id> [<id>…]        vrátí archivované karty mezi platné
   airine obsah [ano|ne]           posílat s kartou i obsah souboru (výchozí ano)
-  airine nahraj-obsah [--koren CESTA]… [--zkouska] [--vypis]
+  airine vynech [VZOR…] [--zrus VZOR]
+                                  složky, jejichž obsah nikdy neodejde (jen karta)
+  airine nahraj-obsah [--koren CESTA]… [--vynech VZOR]… [--zkouska] [--vypis]
                                   pošle obsah karet, které ho v Airine nemají
   airine mcp                      místní MCP server přes stdio
 """
@@ -185,9 +187,30 @@ case "obsah":
     if argumenty.first != nil { do { try n.uloz(domov) } catch { chyba("Nastavení nejde uložit: \(error)") } }
     print("Posílat obsah souborů: \(n.posilatObsah ? "ano" : "ne")")
 
+case "vynech":
+    var n: Nastaveni
+    do { n = try Nastaveni.nacti(domov) } catch { chyba("Nastavení nejde načíst: \(error)") }
+    var zrusit: [String] = []
+    while let z = volba("--zrus") { zrusit.append(z) }
+    let zmena = !zrusit.isEmpty || !argumenty.isEmpty
+    n.vynechatObsah.removeAll { zrusit.contains($0) }
+    for v in argumenty where !n.vynechatObsah.contains(v) { n.vynechatObsah.append(v) }
+    if zmena { do { try n.uloz(domov) } catch { chyba("Nastavení nejde uložit: \(error)") } }
+    print(n.vynechatObsah.isEmpty ? "Nic se nevynechává." : "Obsah neodejde z:\n" + n.vynechatObsah.map { "  " + $0 }.joined(separator: "\n"))
+
 case "nahraj-obsah":
     let zkouska = prepinac("--zkouska")
     let vypis = prepinac("--vypis")
+    var nove: [String] = []
+    while let v = volba("--vynech") { nove.append(v) }
+    if !nove.isEmpty {
+        // Vynechání platí trvale, i pro hook: ukládá se do nastavení.
+        do {
+            var m = try Nastaveni.nacti(domov)
+            for v in nove where !m.vynechatObsah.contains(v) { m.vynechatObsah.append(v) }
+            try m.uloz(domov)
+        } catch { chyba("Nastavení nejde uložit: \(error)") }
+    }
     var koreny: [URL] = []
     while let k = volba("--koren") { koreny.append(URL(fileURLWithPath: (k as NSString).expandingTildeInPath, isDirectory: true)) }
     let (kopie, n) = otevri()
@@ -196,13 +219,14 @@ case "nahraj-obsah":
     do {
         // Nejdřív čerstvá kopie: podle ní plugin pozná, co Airine už má.
         _ = try await Synchronizace.spust(domov: domov, kopie: kopie) { HttpAirine(nastaveni: $0, token: t) }
-        let v = try await Obsah.dohon(kopie: kopie, api: HttpAirine(nastaveni: try Nastaveni.nacti(domov), token: t),
-                                      koreny: koreny, zkouska: zkouska)
+        let m = try Nastaveni.nacti(domov)
+        let v = try await Obsah.dohon(kopie: kopie, api: HttpAirine(nastaveni: m, token: t),
+                                      koreny: koreny, vynechat: m.vynechatObsah, zkouska: zkouska)
         print((zkouska ? "Zkouška, nic neodešlo. Poslal bych: " : "Nahráno: ") + "\(v.nahrano)")
         let pripony = Dictionary(grouping: v.soubory) { URL(fileURLWithPath: $0).pathExtension.lowercased() }
             .map { "\($0.key): \($0.value.count)" }.sorted().joined(separator: "  ")
         if !pripony.isEmpty { print("Podle přípony: \(pripony)") }
-        print("Soubor na tomhle Macu není: \(v.bezSouboru)  na disku je jiná verze: \(v.jinaVerze)  nad 1 MB nebo prázdný: \(v.velke)  jiný typ: \(v.jinyTyp)  bez práva: \(v.bezPrava)")
+        print("Soubor na tomhle Macu není: \(v.bezSouboru)  na disku je jiná verze: \(v.jinaVerze)  nad 1 MB nebo prázdný: \(v.velke)  vynecháno: \(v.vynechano)  jiný typ: \(v.jinyTyp)  bez práva: \(v.bezPrava)")
         // Soubory s tajemstvím odejdou jen jako karta; vypíšou se vždy, ať o nich člověk ví.
         if !v.tajne.isEmpty { print("Vypadá na tajemství, obsah neodejde (\(v.tajne.count)):"); v.tajne.forEach { print("  \($0)") } }
         if vypis { print("Soubory:"); v.soubory.forEach { print("  \($0)") } }

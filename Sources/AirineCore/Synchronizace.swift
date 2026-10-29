@@ -8,8 +8,12 @@ public struct Synchronizace: Sendable {
     let api: AirineAPI
     /// Posílat s kartou i obsah souboru (`Nastaveni.posilatObsah`).
     let obsah: Bool
+    /// Vzory, jejichž obsah neodejde (`Nastaveni.vynechatObsah`).
+    let vynechat: [String]
 
-    public init(kopie: Kopie, api: AirineAPI, obsah: Bool = true) { self.kopie = kopie; self.api = api; self.obsah = obsah }
+    public init(kopie: Kopie, api: AirineAPI, obsah: Bool = true, vynechat: [String] = []) {
+        self.kopie = kopie; self.api = api; self.obsah = obsah; self.vynechat = vynechat
+    }
 
     public struct Vysledek: Sendable, Equatable {
         public var odeslano = 0
@@ -31,11 +35,11 @@ public struct Synchronizace: Sendable {
     /// Zařízení jde v hlavičce požadavku, fronta se proto nepřepisuje.
     public static func spust(domov: Domov, kopie: Kopie, api: @Sendable (Nastaveni) -> AirineAPI) async throws -> Vysledek {
         var n = try Nastaveni.nacti(domov)
-        var v = try await Synchronizace(kopie: kopie, api: api(n), obsah: n.posilatObsah).probehni()
+        var v = try await Synchronizace(kopie: kopie, api: api(n), obsah: n.posilatObsah, vynechat: n.vynechatObsah).probehni()
         if v.ciziZarizeni {
             n.zarizeni = UUID().uuidString.lowercased()
             try n.uloz(domov)
-            v = try await Synchronizace(kopie: kopie, api: api(n), obsah: n.posilatObsah).probehni()
+            v = try await Synchronizace(kopie: kopie, api: api(n), obsah: n.posilatObsah, vynechat: n.vynechatObsah).probehni()
         }
         return v
     }
@@ -91,7 +95,7 @@ public struct Synchronizace: Sendable {
     /// Hlášení s obsahem, když na disku leží přesně nahlášená verze; jinak
     /// (soubor se mezitím změnil, zmizel, obsah neprošel) samotná karta.
     func odesli(_ h: Hlaseni, _ v: inout Vysledek) async throws -> OdpovedHlaseni {
-        if obsah, let cesta = h.cesta, let o = Obsah.nacti(cesta: cesta, otisk: h.otisk) {
+        if obsah, let cesta = h.cesta, !Obsah.vynechano(cesta, vynechat), let o = Obsah.nacti(cesta: cesta, otisk: h.otisk) {
             do {
                 let odp = try await api.nahrajObsah(h, data: o.data, mime: o.mime)
                 v.obsahu += 1

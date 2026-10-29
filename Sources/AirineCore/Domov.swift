@@ -34,12 +34,16 @@ public struct Nastaveni: Codable, Sendable {
     /// Posílat s kartou i obsah souboru (MD do 1 MB). Výchozí zapnuto
     /// (rozhodnutí 29. 10. 2026); starší soubor nastavení klíč nemá.
     public var posilatObsah: Bool
+    /// Složky a soubory, jejichž obsah nikdy neodejde, jen karta
+    /// (`airine vynech`). Vzor bez „/“ na začátku sedí kdekoli v cestě.
+    public var vynechatObsah: [String]
 
-    public init(server: String, zarizeni: String, nazevZarizeni: String, posilatObsah: Bool = true) {
-        self.server = server; self.zarizeni = zarizeni; self.nazevZarizeni = nazevZarizeni; self.posilatObsah = posilatObsah
+    public init(server: String, zarizeni: String, nazevZarizeni: String, posilatObsah: Bool = true, vynechatObsah: [String] = []) {
+        self.server = server; self.zarizeni = zarizeni; self.nazevZarizeni = nazevZarizeni
+        self.posilatObsah = posilatObsah; self.vynechatObsah = vynechatObsah
     }
 
-    enum CodingKeys: String, CodingKey { case server, zarizeni, nazevZarizeni, posilatObsah }
+    enum CodingKeys: String, CodingKey { case server, zarizeni, nazevZarizeni, posilatObsah, vynechatObsah }
 
     public init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
@@ -47,6 +51,7 @@ public struct Nastaveni: Codable, Sendable {
         zarizeni = try c.decode(String.self, forKey: .zarizeni)
         nazevZarizeni = try c.decode(String.self, forKey: .nazevZarizeni)
         posilatObsah = try c.decodeIfPresent(Bool.self, forKey: .posilatObsah) ?? true
+        vynechatObsah = try c.decodeIfPresent([String].self, forKey: .vynechatObsah) ?? []
     }
 
     public static func nacti(_ domov: Domov) throws -> Nastaveni {

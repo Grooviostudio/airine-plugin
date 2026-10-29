@@ -755,6 +755,34 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
         #expect(!w.online && w.zbyva == 1)
     }
 
+    @Test func vynechaniPoCelychSlozkach() {
+        let vz = ["Claude/Code/Aktivita/", "**/.claude/worktrees/", "/Users/o/Tajne"]
+        #expect(Obsah.vynechano("/Users/o/Groovio/Claude/Code/Aktivita/2026-10-20.md", vz))
+        #expect(Obsah.vynechano("/Users/o/Groovio/Web/.claude/worktrees/x/CLAUDE.md", vz))
+        #expect(Obsah.vynechano("/Users/o/Tajne/a.md", vz))
+        #expect(!Obsah.vynechano("/Users/o/Groovio/Claude/Code/Aktivita-stara/a.md", vz), "po složkách, ne po znacích")
+        #expect(!Obsah.vynechano("/Users/o/Tajnejsi/a.md", vz))
+        #expect(!Obsah.vynechano("/Users/o/Groovio/Web/.claude/CLAUDE.md", vz))
+        #expect(!Obsah.vynechano("/a/b.md", ["", "/"]), "prázdný vzor nevynechá všechno")
+    }
+
+    @Test func vynechanySouborJdeJenJakoKarta() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        let cesta = try soubor(d, "Aktivita/brief.md", briefText)
+        try Nahlasovani(kopie: k).nahlas(cesta: cesta)
+        let v = try await Synchronizace(kopie: k, api: server, vynechat: ["Aktivita"]).probehni()
+        #expect(v.odeslano == 1 && v.obsahu == 0)
+        #expect(await !server.maObsah("ob1"))
+
+        let w = try await Obsah.dohon(kopie: k, api: server, vynechat: ["Aktivita/"])
+        #expect(w.vynechano == 1 && w.nahrano == 0)
+        let x = try await Obsah.dohon(kopie: k, api: server)
+        #expect(x.nahrano == 1, "bez vynechání obsah dožene")
+
+        let stare = #"{"server":"s","zarizeni":"z","nazevZarizeni":"Mac"}"#
+        #expect(try JSONDecoder().decode(Nastaveni.self, from: Data(stare.utf8)).vynechatObsah.isEmpty)
+    }
+
     @Test func nastaveniBezKliceZnamenaPosilat() throws {
         let stare = #"{"server":"https://app.airine.eu","zarizeni":"z1","nazevZarizeni":"Mac"}"#
         #expect(try JSONDecoder().decode(Nastaveni.self, from: Data(stare.utf8)).posilatObsah)

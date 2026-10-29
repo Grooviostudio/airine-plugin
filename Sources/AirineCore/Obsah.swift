@@ -45,6 +45,20 @@ public enum Obsah {
         try? zkontroluj(cesta: cesta, otisk: otisk).get()
     }
 
+    /// Leží cesta pod některým vzorem z `airine vynech`? Vzor „/…“ nebo „~/…“
+    /// je začátek cesty, jiný sedí na celé složky kdekoli v ní; „**/“ na
+    /// začátku se ignoruje. Porovnává se po celých složkách, ne po znacích.
+    public static func vynechano(_ cesta: String, _ vzory: [String]) -> Bool {
+        let c = "/" + cesta.split(separator: "/").joined(separator: "/") + "/"
+        return vzory.contains { vzor in
+            var v = vzor.hasPrefix("**/") ? String(vzor.dropFirst(3)) : vzor
+            if v.hasPrefix("~") { v = (v as NSString).expandingTildeInPath }
+            let usek = v.split(separator: "/").joined(separator: "/")
+            guard !usek.isEmpty else { return false }
+            return v.hasPrefix("/") ? c.hasPrefix("/" + usek + "/") : c.contains("/" + usek + "/")
+        }
+    }
+
     /// Vzory klíčů, hesel a tokenů. Raději soubor navíc bez obsahu než
     /// tajemství v Airine: slovo „token“ samo nevadí, vadí s hodnotou.
     static let vzory: [(String, NSRegularExpression)] = [
@@ -97,6 +111,7 @@ public enum Obsah {
         public var bezSouboru = 0           // na tomhle Macu soubor není
         public var jinaVerze = 0            // soubor je, ale obsah se od karty liší
         public var velke = 0                // prázdný nebo nad 1 MB
+        public var vynechano = 0            // pod vzorem z `airine vynech`
         public var jinyTyp = 0              // přípona, kterou server nebere
         public var tajne: [String] = []     // cesty, které vypadají na tajemství
         public var soubory: [String] = []   // cesty, jejichž obsah odešel (u zkoušky by odešel)
@@ -109,7 +124,8 @@ public enum Obsah {
 
     /// Karty, jejichž obsah Airine nemá, a jejich bajty na tomhle Macu.
     /// Archivované a cizí karty přeskočí. `zkouska` jen spočítá, nic neposílá.
-    public static func dohon(kopie: Kopie, api: AirineAPI, koreny: [URL] = [], zkouska: Bool = false) async throws -> Dohnani {
+    public static func dohon(kopie: Kopie, api: AirineAPI, koreny: [URL] = [], vynechat: [String] = [],
+                             zkouska: Bool = false) async throws -> Dohnani {
         var v = Dohnani()
         let karty = try kopie.karty().filter { $0.smazano != true && $0.bez_prava != true && !$0.archivovana && $0.neniVAirine && $0.otisk != nil }
         for (i, k) in karty.enumerated() {
@@ -117,7 +133,8 @@ public enum Obsah {
             let cesty = (k.mista ?? []).compactMap(\.cesta).flatMap { naDisku($0, koreny: koreny) }
             let existuje = cesty.filter { FileManager.default.fileExists(atPath: $0) }
             guard !existuje.isEmpty else { v.bezSouboru += 1; continue }
-            let vysledky = existuje.map { c in (c, zkontroluj(cesta: c, otisk: k.otisk!)) }
+            guard existuje.contains(where: { !vynechano($0, vynechat) }) else { v.vynechano += 1; continue }
+            let vysledky = existuje.filter { !vynechano($0, vynechat) }.map { c in (c, zkontroluj(cesta: c, otisk: k.otisk!)) }
             guard let (cesta, obsah) = vysledky.lazy.compactMap({ c, r in (try? r.get()).map { (c, $0) } }).first,
                   let h = hlaseni(k, cesta: cesta, data: obsah.data) else {
                 // Tajemství má přednost: o takovém souboru se musí vědět.
