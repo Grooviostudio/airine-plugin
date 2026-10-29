@@ -13,6 +13,7 @@ final class Stav: ObservableObject {
     @Published var online = true
     @Published var prihlasen = false
     @Published var rozpory: [String] = []
+    @Published var posilatObsah = true
 
     let domov = Domov()
     var kopie: Kopie?
@@ -36,9 +37,18 @@ final class Stav: ObservableObject {
     func obnov() {
         guard let kopie else { return }
         posledni = kopie.posledniSynchronizace
+        posilatObsah = (try? Nastaveni.nacti(domov))?.posilatObsah ?? true
         let f = (try? kopie.fronta(vcetneOdmitnutych: true)) ?? []
         fronta = f.filter { $0.odmitnuto == nil }.count
         odmitnuto = f.count - fronta
+    }
+
+    /// Přepínač v liště: posílat s kartou i obsah souboru.
+    func nastavObsah(_ ano: Bool) {
+        guard var n = try? Nastaveni.nacti(domov) else { return }
+        n.posilatObsah = ano
+        try? n.uloz(domov)
+        posilatObsah = ano
     }
 
     func synchronizuj() async {
@@ -67,6 +77,7 @@ struct AirineLista: App {
                 if stav.odmitnuto > 0 { Text("Odmítnutá hlášení: \(stav.odmitnuto)") }
                 if !stav.rozpory.isEmpty { Text("Rozpory: \(stav.rozpory.count)") }
                 Divider()
+                Toggle("Posílat obsah souborů", isOn: Binding(get: { stav.posilatObsah }, set: { stav.nastavObsah($0) }))
                 Button("Synchronizovat teď") { Task { await stav.synchronizuj() } }
                 Button("Ukončit") { NSApplication.shared.terminate(nil) }
             }

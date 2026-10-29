@@ -67,6 +67,30 @@ actor MockServer: AirineAPI {
 
     func pocetVerzi(_ id: String) -> Int { verze[id]?.count ?? 0 }
 
+    /// Jako `/nahrat` + `/potvrdit`: bajty musí sedět s otiskem, pak se kartě
+    /// té verze nastaví `ulozeny_otisk`. `odmitniObsah` = strop nebo kvóta.
+    var obsah: [String: Data] = [:]              // "id:otisk" → bajty
+    var odmitniObsah = false
+    func nastav(odmitniObsah: Bool) { self.odmitniObsah = odmitniObsah }
+    func maObsah(_ id: String) -> Bool { obsah.keys.contains { $0.hasPrefix(id + ":") } }
+
+    func nahrajObsah(_ h: Hlaseni, data: Data, mime: String) async throws -> OdpovedHlaseni {
+        try await nahrajObsah(h, data: data, mime: mime, zarizeni: nil)
+    }
+
+    func nahrajObsah(_ h: Hlaseni, data: Data, mime: String, zarizeni: String?) async throws -> OdpovedHlaseni {
+        guard online else { throw ChybaServeru.bezSpojeni }
+        if odmitniObsah || Otisk.sha256(data) != h.otisk { throw ChybaServeru.obsahNeprosel("mock") }
+        if bezPrava.contains(h.id) { throw ChybaServeru.bezPravaKarty }
+        var o = try await nahlas(h, zarizeni: zarizeni)
+        obsah["\(h.id):\(h.otisk)"] = data
+        if karty[h.id]?.otisk == h.otisk && karty[h.id]?.ulozeny_otisk != h.otisk {
+            karty[h.id]!.ulozeny_otisk = h.otisk; zmena(h.id)
+        }
+        o.ulozeny_otisk = karty[h.id]?.ulozeny_otisk
+        return o
+    }
+
     /// Jako `katalog_archivuj()`: jen stav karty, hlášení archiv nemění.
     func archiv(karty ids: [String], archivovat: Bool) async throws -> Int {
         guard online else { throw ChybaServeru.bezSpojeni }
@@ -87,6 +111,9 @@ struct ZarizeniMock: AirineAPI {
     func zmeny(od kurzor: String?, limit: Int) async throws -> Zmeny { try await server.zmeny(od: kurzor, limit: limit) }
     func nahlas(_ h: Hlaseni) async throws -> OdpovedHlaseni { try await server.nahlas(h, zarizeni: zarizeni) }
     func archiv(karty: [String], archivovat: Bool) async throws -> Int { try await server.archiv(karty: karty, archivovat: archivovat) }
+    func nahrajObsah(_ h: Hlaseni, data: Data, mime: String) async throws -> OdpovedHlaseni {
+        try await server.nahrajObsah(h, data: data, mime: mime, zarizeni: zarizeni)
+    }
 }
 
 func docasnyDomov() throws -> Domov {
@@ -627,5 +654,197 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
     @Test func relativniCesta() {
         #expect(Odkazy.relativni("/a/b/c.md", od: "/a/b") == "c.md")
         #expect(Odkazy.relativni("/a/x/c.md", od: "/a/b/d") == "../../x/c.md")
+    }
+}
+
+@Suite struct ObsahTests {
+    let briefText = "---\nname: brief\ndescription: Brief\nairine:\n  typ: brief\n  id: ob1\n---\nTělo briefu\n"
+
+    @Test func synchronizacePosleObsahSKartou() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        let cesta = try soubor(d, "brief.md", briefText)
+        try Nahlasovani(kopie: k).nahlas(cesta: cesta)
+        let v = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(v.odeslano == 1 && v.obsahu == 1 && v.bezObsahu.isEmpty)
+        #expect(await server.maObsah("ob1"))
+        #expect(try k.karta("ob1")?.neniVAirine == false, "kanál změn přinese ulozeny_otisk")
+    }
+
+    @Test func vypnutyObsahPosleJenKartu() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        try Nahlasovani(kopie: k).nahlas(cesta: try soubor(d, "brief.md", briefText))
+        let v = try await Synchronizace(kopie: k, api: server, obsah: false).probehni()
+        #expect(v.odeslano == 1 && v.obsahu == 0)
+        #expect(await !server.maObsah("ob1"))
+        #expect(try k.karta("ob1")?.neniVAirine == true)
+    }
+
+    @Test func zmenenySouborPosleJenKartu() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        let cesta = try soubor(d, "brief.md", briefText)
+        try Nahlasovani(kopie: k).nahlas(cesta: cesta)
+        try (briefText + "dopsáno\n").write(toFile: cesta, atomically: true, encoding: .utf8)
+        let v = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(v.odeslano == 1 && v.obsahu == 0, "jiné bajty než nahlášená verze nikdy neodejdou")
+        #expect(await !server.maObsah("ob1"))
+    }
+
+    @Test func odmitnutyObsahNezastaviKartu() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        try Nahlasovani(kopie: k).nahlas(cesta: try soubor(d, "brief.md", briefText))
+        await server.nastav(odmitniObsah: true)
+        let v = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(v.odeslano == 1 && v.obsahu == 0 && v.bezObsahu == ["ob1"])
+        #expect(try k.fronta().isEmpty)
+        #expect(try k.karta("ob1")?.name == "brief")
+    }
+
+    @Test func dohnaniPosleJenPresneVerzeANicNemeni() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        let koren = d.slozka.appendingPathComponent("prace")
+        let shodny = try soubor(d, "a.md", "A\n")
+        _ = try soubor(d, "b.md", "B změněno\n")
+        _ = try soubor(d, "Klienti/c.md", "C\n")
+        // Soubor vedle kořene: „../mimo.md“ by na něj dosáhl, kdyby se z kořene smělo vyjít.
+        try "U\n".write(to: d.slozka.appendingPathComponent("mimo.md"), atomically: true, encoding: .utf8)
+        let karty = [
+            Karta(id: "a", name: "a", popis: "A", typ: "brief", otisk: Otisk.sha256(Data("A\n".utf8)), mista: [Misto(cesta: shodny)]),
+            Karta(id: "b", name: "b", popis: "B", typ: "brief", otisk: Otisk.sha256(Data("B\n".utf8)), mista: [Misto(cesta: koren.appendingPathComponent("b.md").path)]),
+            Karta(id: "c", name: "c", popis: "C", typ: "zapis", otisk: Otisk.sha256(Data("C\n".utf8)), mista: [Misto(cesta: "Klienti/c.md")]),
+            Karta(id: "x", name: "x", popis: "X", typ: "zapis", otisk: Otisk.sha256(Data("X\n".utf8)), mista: [Misto(cesta: "/nikde/x.md")]),
+            Karta(id: "u", name: "u", popis: "U", typ: "zapis", otisk: Otisk.sha256(Data("U\n".utf8)), mista: [Misto(cesta: "../mimo.md")]),
+        ]
+        for var c in karty { c.menit = true; await server.pridej(c) }
+        _ = try await Synchronizace(kopie: k, api: server).probehni()
+
+        let zk = try await Obsah.dohon(kopie: k, api: server, koreny: [koren], zkouska: true)
+        #expect(zk == Obsah.Dohnani(nahrano: 2, bezSouboru: 2, jinaVerze: 1), "„../“ z kořene nevede")
+        #expect(await !server.maObsah("a"), "zkouška nic neposílá")
+
+        let v = try await Obsah.dohon(kopie: k, api: server, koreny: [koren])
+        #expect(v.nahrano == 2 && v.jinaVerze == 1 && v.bezSouboru == 2 && v.chyby.isEmpty)
+        let (ma, mc, mb) = (await server.maObsah("a"), await server.maObsah("c"), await server.maObsah("b"))
+        #expect(ma && mc && !mb)
+        #expect(await server.pocetVerzi("a") == 1, "dohnání nezakládá novou verzi")
+        let a = await server.karty["a"]
+        #expect(a?.popis == "A" && a?.typ == "brief" && a?.ulozeny_otisk == a?.otisk)
+
+        // Podruhé už není co poslat.
+        _ = try await Synchronizace(kopie: k, api: server).probehni()
+        let znovu = try await Obsah.dohon(kopie: k, api: server, koreny: [koren])
+        #expect(znovu.nahrano == 0)
+    }
+
+    @Test func dohnaniPreskociCiziKartyAVypadek() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        let cesta = try soubor(d, "a.md", "A\n")
+        var cizi = Karta(id: "cz", name: "cz", popis: "C", typ: "brief", otisk: Otisk.sha256(Data("A\n".utf8)), mista: [Misto(cesta: cesta)])
+        cizi.menit = false
+        await server.pridej(cizi)
+        _ = try await Synchronizace(kopie: k, api: server).probehni()
+        let v = try await Obsah.dohon(kopie: k, api: server)
+        #expect(v.bezPrava == 1 && v.nahrano == 0)
+
+        var moje = cizi; moje.id = "mj"; moje.menit = true
+        await server.pridej(moje)
+        _ = try await Synchronizace(kopie: k, api: server).probehni()
+        await server.nastav(online: false)
+        let w = try await Obsah.dohon(kopie: k, api: server)
+        #expect(!w.online && w.zbyva == 1)
+    }
+
+    @Test func nastaveniBezKliceZnamenaPosilat() throws {
+        let stare = #"{"server":"https://app.airine.eu","zarizeni":"z1","nazevZarizeni":"Mac"}"#
+        #expect(try JSONDecoder().decode(Nastaveni.self, from: Data(stare.utf8)).posilatObsah)
+        var n = Nastaveni(server: "s", zarizeni: "z", nazevZarizeni: "Mac")
+        n.posilatObsah = false
+        let zpet = try JSONDecoder().decode(Nastaveni.self, from: JSONEncoder().encode(n))
+        #expect(!zpet.posilatObsah)
+    }
+
+    @Test func soubory() throws {
+        let d = try docasnyDomov()
+        let c = try soubor(d, "x.md", "X\n")
+        #expect(Obsah.nacti(cesta: c, otisk: Otisk.sha256(Data("X\n".utf8)))?.mime == "text/markdown")
+        #expect(Obsah.nacti(cesta: c, otisk: Otisk.sha256(Data("Y\n".utf8))) == nil)
+        let png = try soubor(d, "x.png", "X\n")
+        #expect(Obsah.nacti(cesta: png, otisk: Otisk.sha256(Data("X\n".utf8))) == nil, "server bere jen text")
+        let velky = try soubor(d, "v.md", String(repeating: "a", count: Obsah.maxBajtu + 1))
+        #expect(Obsah.nacti(cesta: velky, otisk: Otisk.sha256(try Data(contentsOf: URL(fileURLWithPath: velky)))) == nil)
+    }
+}
+
+/// Podstrčený server pro HttpAirine: zapisuje požadavky, odpovídá podle cesty.
+final class Podstrceny: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var pozadavky: [URLRequest] = []
+    nonisolated(unsafe) static var tela: [Data] = []
+    nonisolated(unsafe) static var odpoved: (URLRequest) -> (Int, String) = { _ in (500, "") }
+    static let zamek = NSLock()
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        var telo = request.httpBody ?? Data()
+        if let s = request.httpBodyStream {
+            s.open(); var buf = [UInt8](repeating: 0, count: 4096)
+            while s.hasBytesAvailable { let n = s.read(&buf, maxLength: buf.count); if n <= 0 { break }; telo.append(buf, count: n) }
+            s.close()
+        }
+        Self.zamek.lock(); Self.pozadavky.append(request); Self.tela.append(telo); let (kod, json) = Self.odpoved(request); Self.zamek.unlock()
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: kod, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(json.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+@Suite(.serialized) struct HttpObsahTests {
+    func api() -> HttpAirine {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.protocolClasses = [Podstrceny.self]
+        return HttpAirine(nastaveni: Nastaveni(server: "https://app.test", zarizeni: "z1", nazevZarizeni: "Mac"),
+                          token: "airine_tajny", session: URLSession(configuration: cfg))
+    }
+    let h = Hlaseni(id: "k1", name: "brief", popis: "B", typ: "brief", cesta: "/x/brief.md", otisk: Otisk.sha256(Data("A\n".utf8)), radku: 1, bajty: 2)
+
+    @Test func triKrokyATokenNejdeDoUloziste() async throws {
+        Podstrceny.pozadavky = []; Podstrceny.tela = []
+        Podstrceny.odpoved = { r in
+            switch r.url!.path {
+            case "/api/katalog/k1/nahrat": return (201, #"{"upload_url":"https://sb.test/storage/v1/object/upload/sign/b/ws/katalog/k1/o.md?token=t","method":"PUT","headers":{"Content-Type":"text/markdown"},"ulozeno":"ws/katalog/k1/o.md"}"#)
+            case "/storage/v1/object/upload/sign/b/ws/katalog/k1/o.md": return (200, "{}")
+            case "/api/katalog/k1/potvrdit": return (200, #"{"stav":"ok","id":"k1","otisk":"o","ulozeny_otisk":"o"}"#)
+            default: return (404, "")
+            }
+        }
+        let o = try await api().nahrajObsah(h, data: Data("A\n".utf8), mime: "text/markdown")
+        #expect(o.stav == .ok && o.ulozeny_otisk == "o")
+        let p = Podstrceny.pozadavky
+        #expect(p.map { $0.url!.host! } == ["app.test", "sb.test", "app.test"])
+        #expect(p[0].value(forHTTPHeaderField: "x-api-key") == "airine_tajny")
+        #expect(p[1].value(forHTTPHeaderField: "x-api-key") == nil && p[1].value(forHTTPHeaderField: "x-airine-zarizeni") == nil)
+        #expect(p[1].httpMethod == "PUT" && Podstrceny.tela[1] == Data("A\n".utf8))
+        let potvrzeni = try #require(try JSONSerialization.jsonObject(with: Podstrceny.tela[2]) as? [String: Any])
+        #expect(potvrzeni["ulozeno"] as? String == "ws/katalog/k1/o.md" && potvrzeni["name"] as? String == "brief")
+    }
+
+    @Test func uzNahranoPreskociPutAKvotaJeObsahNeprosel() async throws {
+        Podstrceny.pozadavky = []; Podstrceny.tela = []
+        Podstrceny.odpoved = { r in
+            r.url!.path.hasSuffix("/nahrat") ? (200, #"{"uz_nahrano":true,"ulozeno":"ws/k1/o.md"}"#) : (200, #"{"stav":"uz_prijato","id":"k1"}"#)
+        }
+        _ = try await api().nahrajObsah(h, data: Data("A\n".utf8), mime: "text/markdown")
+        #expect(Podstrceny.pozadavky.count == 2 && Podstrceny.pozadavky.allSatisfy { $0.url!.host == "app.test" })
+
+        Podstrceny.odpoved = { _ in (413, #"{"code":"uloziste_plne"}"#) }
+        await #expect(throws: ChybaServeru.obsahNeprosel("nahrat 413")) {
+            try await api().nahrajObsah(h, data: Data("A\n".utf8), mime: "text/markdown")
+        }
+        Podstrceny.odpoved = { r in
+            r.url!.path.hasSuffix("/nahrat") ? (200, #"{"uz_nahrano":true,"ulozeno":"ws/k1/o.md"}"#) : (403, #"{"stav":"bez_prava","id":"k1"}"#)
+        }
+        await #expect(throws: ChybaServeru.bezPravaKarty) {
+            try await api().nahrajObsah(h, data: Data("A\n".utf8), mime: "text/markdown")
+        }
     }
 }

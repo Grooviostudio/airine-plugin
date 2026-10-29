@@ -6,8 +6,10 @@ import Foundation
 public struct Synchronizace: Sendable {
     let kopie: Kopie
     let api: AirineAPI
+    /// Posílat s kartou i obsah souboru (`Nastaveni.posilatObsah`).
+    let obsah: Bool
 
-    public init(kopie: Kopie, api: AirineAPI) { self.kopie = kopie; self.api = api }
+    public init(kopie: Kopie, api: AirineAPI, obsah: Bool = true) { self.kopie = kopie; self.api = api; self.obsah = obsah }
 
     public struct Vysledek: Sendable, Equatable {
         public var odeslano = 0
@@ -20,6 +22,8 @@ public struct Synchronizace: Sendable {
         public var ciziZarizeni = false          // volající si vezme nové uuid a spustí znovu
         public var smazanych = 0                 // hlášení karet, které jsou v Airine smazané
         public var nesoulad: [String] = []       // id karet, kde se hlášení liší od hlavičky souboru
+        public var obsahu = 0                    // hlášení, která odešla i s obsahem
+        public var bezObsahu: [String] = []      // obsah neprošel (strop, kvóta), odešla jen karta
     }
 
     /// Běh se vším, co potřebuje lišta i příkaz: když server řekne, že uuid
@@ -27,11 +31,11 @@ public struct Synchronizace: Sendable {
     /// Zařízení jde v hlavičce požadavku, fronta se proto nepřepisuje.
     public static func spust(domov: Domov, kopie: Kopie, api: @Sendable (Nastaveni) -> AirineAPI) async throws -> Vysledek {
         var n = try Nastaveni.nacti(domov)
-        var v = try await Synchronizace(kopie: kopie, api: api(n)).probehni()
+        var v = try await Synchronizace(kopie: kopie, api: api(n), obsah: n.posilatObsah).probehni()
         if v.ciziZarizeni {
             n.zarizeni = UUID().uuidString.lowercased()
             try n.uloz(domov)
-            v = try await Synchronizace(kopie: kopie, api: api(n)).probehni()
+            v = try await Synchronizace(kopie: kopie, api: api(n), obsah: n.posilatObsah).probehni()
         }
         return v
     }
@@ -47,7 +51,7 @@ public struct Synchronizace: Sendable {
     func odesliFrontu(_ v: inout Vysledek) async throws {
         for p in try kopie.fronta() {
             do {
-                let o = try await api.nahlas(p.hlaseni)
+                let o = try await odesli(p.hlaseni, &v)
                 // Kartu samotnou přinese až kanál změn, tady jen příznak rozporu.
                 if o.stav == .rozpor || o.rozpor == true {
                     v.rozpory.append(p.hlaseni.id)
@@ -82,6 +86,21 @@ public struct Synchronizace: Sendable {
                 return
             }
         }
+    }
+
+    /// Hlášení s obsahem, když na disku leží přesně nahlášená verze; jinak
+    /// (soubor se mezitím změnil, zmizel, obsah neprošel) samotná karta.
+    func odesli(_ h: Hlaseni, _ v: inout Vysledek) async throws -> OdpovedHlaseni {
+        if obsah, let cesta = h.cesta, let o = Obsah.nacti(cesta: cesta, otisk: h.otisk) {
+            do {
+                let odp = try await api.nahrajObsah(h, data: o.data, mime: o.mime)
+                v.obsahu += 1
+                return odp
+            } catch ChybaServeru.obsahNeprosel {
+                v.bezObsahu.append(h.id)
+            }
+        }
+        return try await api.nahlas(h)
     }
 
     func stahni(_ v: inout Vysledek) async throws {

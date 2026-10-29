@@ -31,6 +31,23 @@ public struct Nastaveni: Codable, Sendable {
     public var server: String
     public var zarizeni: String
     public var nazevZarizeni: String
+    /// Posílat s kartou i obsah souboru (MD do 1 MB). Výchozí zapnuto
+    /// (rozhodnutí 29. 10. 2026); starší soubor nastavení klíč nemá.
+    public var posilatObsah: Bool
+
+    public init(server: String, zarizeni: String, nazevZarizeni: String, posilatObsah: Bool = true) {
+        self.server = server; self.zarizeni = zarizeni; self.nazevZarizeni = nazevZarizeni; self.posilatObsah = posilatObsah
+    }
+
+    enum CodingKeys: String, CodingKey { case server, zarizeni, nazevZarizeni, posilatObsah }
+
+    public init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        server = try c.decode(String.self, forKey: .server)
+        zarizeni = try c.decode(String.self, forKey: .zarizeni)
+        nazevZarizeni = try c.decode(String.self, forKey: .nazevZarizeni)
+        posilatObsah = try c.decodeIfPresent(Bool.self, forKey: .posilatObsah) ?? true
+    }
 
     public static func nacti(_ domov: Domov) throws -> Nastaveni {
         if let data = try? Data(contentsOf: domov.nastaveni) {

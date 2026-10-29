@@ -7,6 +7,10 @@ public protocol AirineAPI: Sendable {
     func nahlas(_ h: Hlaseni) async throws -> OdpovedHlaseni
     /// Archiv karet (POST /api/katalog/archiv): všechno, nebo nic. Vrací počet změněných.
     func archiv(karty: [String], archivovat: Bool) async throws -> Int
+    /// Hlášení i s obsahem (`/nahrat` → PUT bajtů → `/potvrdit`). Odpověď je
+    /// táž jako u `nahlas`. Když obsah neprojde (strop, kvóta, úložiště),
+    /// hází `obsahNeprosel` a volající pošle samotnou kartu.
+    func nahrajObsah(_ h: Hlaseni, data: Data, mime: String) async throws -> OdpovedHlaseni
 }
 
 public enum ChybaServeru: Error, Equatable {
@@ -18,6 +22,7 @@ public enum ChybaServeru: Error, Equatable {
     case ciziZarizeni                // 409 cizi_zarizeni: uuid zařízení má jiný člen
     case ciziId                      // 409 cizi_id: uuid karty má jiný workspace
     case smazano                     // 410 u hlášení: karta je v Airine smazaná
+    case obsahNeprosel(String)       // obsah se nenahrál; karta jde bez něj
     case jine(Int, String)
 }
 
@@ -105,6 +110,47 @@ public struct HttpAirine: AirineAPI {
         let (data, kod) = try await posli(r)
         guard (200..<300).contains(kod) else { throw Self.chybaHlaseni(data, kod) }
         return try JSONDecoder().decode(OdpovedHlaseni.self, from: data)
+    }
+
+    public func nahrajObsah(_ h: Hlaseni, data: Data, mime: String) async throws -> OdpovedHlaseni {
+        let cesta = "api/katalog/\(h.id)"
+        let zadost = try JSONSerialization.data(withJSONObject: ["otisk": h.otisk, "mime": mime, "bajty": data.count])
+        let (d1, k1) = try await posli(pozadavek("\(cesta)/nahrat", metoda: "POST", telo: zadost))
+        guard (200..<300).contains(k1) else {
+            // 413 kvóta, 422 typ nebo velikost: karta půjde bez obsahu.
+            if k1 == 413 || k1 == 422 { throw ChybaServeru.obsahNeprosel("nahrat \(k1)") }
+            throw Self.chybaHlaseni(d1, k1)
+        }
+        let odp = (try? JSONSerialization.jsonObject(with: d1)) as? [String: Any] ?? [:]
+        guard let ulozeno = odp["ulozeno"] as? String else { throw ChybaServeru.obsahNeprosel("bez ulozeno") }
+        if odp["uz_nahrano"] as? Bool != true {
+            guard let adresa = (odp["upload_url"] as? String).flatMap(URL.init(string:)), adresa.scheme == "https" else {
+                throw ChybaServeru.obsahNeprosel("bez adresy")
+            }
+            // Úložiště dostane jen bajty a hlavičky, které řekl server. Token
+            // Airine a id zařízení sem nejdou.
+            var put = URLRequest(url: adresa, timeoutInterval: 60)
+            put.httpMethod = (odp["method"] as? String) ?? "PUT"
+            for (k, v) in (odp["headers"] as? [String: String]) ?? ["Content-Type": mime] { put.setValue(v, forHTTPHeaderField: k) }
+            put.httpBody = data
+            let kod: Int
+            do { kod = ((try await session.data(for: put)).1 as? HTTPURLResponse)?.statusCode ?? 0 }
+            catch is URLError { throw ChybaServeru.bezSpojeni }
+            guard (200..<300).contains(kod) else { throw ChybaServeru.obsahNeprosel("úložiště \(kod)") }
+        }
+        var telo = (try JSONSerialization.jsonObject(with: JSONEncoder().encode(h)) as? [String: Any]) ?? [:]
+        telo["ulozeno"] = ulozeno
+        let (d2, k2) = try await posli(pozadavek("\(cesta)/potvrdit", metoda: "POST",
+                                                 telo: try JSONSerialization.data(withJSONObject: telo)))
+        guard (200..<300).contains(k2) else {
+            // Bajty nesedí s otiskem nebo zmizely z úložiště: obsah, ne karta.
+            if k2 == 422, let o = try? JSONDecoder().decode(Odmitnuti.self, from: d2),
+               o.chyby.contains(where: { ["ulozeno", "otisk"].contains($0.pole) && ["nesedi", "chybi"].contains($0.kod ?? "") }) {
+                throw ChybaServeru.obsahNeprosel("potvrdit \(o.chyby.map(\.pole))")
+            }
+            throw Self.chybaHlaseni(d2, k2)
+        }
+        return try JSONDecoder().decode(OdpovedHlaseni.self, from: d2)
     }
 
     public func archiv(karty: [String], archivovat: Bool) async throws -> Int {

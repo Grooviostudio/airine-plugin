@@ -10,7 +10,14 @@ a skills po změně nahlásí do katalogu Airine. Funguje i bez spojení.
 
 - Čte jen soubory, které agent právě upravil (`.md`, `.mdc`, do 1 MB), a jejich hlavičku.
 - Do Airine posílá hlavičku souboru (front matter: název, popis, typ, fakta), cestu na tomhle
-  počítači, otisk (SHA-256), počet řádků a velikost, a název počítače. Tělo souboru neposílá.
+  počítači, otisk (SHA-256), počet řádků a velikost, a název počítače.
+- S kartou posílá i obsah souboru (text do 1 MB: `.md`, `.mdc`, `.txt`, `.csv`, `.json`, `.yaml`),
+  aby ho v Airine četli i kolegové bez souboru. Jen když bajty na disku sedí s otiskem karty;
+  jinak jde karta bez obsahu. Vypíná se v liště nebo `airine obsah ne`. Obsah jde do úložiště
+  přes jednorázovou adresu od serveru, token Airine úložiště nedostane.
+- `airine nahraj-obsah [--koren CESTA]… [--zkouska]` dožene obsah karet, které ho v Airine
+  ještě nemají (třeba z dřívějšího importu). Posílá jen soubory, jejichž otisk sedí s kartou,
+  popis ani vazby karty nemění. Relativní cesty z importu hledá pod `--koren` a z něj nevyjde.
 - Místní kopie katalogu je v `~/Library/Application Support/Airine`, každý řádek
   šifrovaný (AES-GCM). Klíč i osobní token jsou v Klíčence.
 - Soubor se hlásí, jen když má v hlavičce jméno (malá písmena a pomlčky), popis a typ.
@@ -30,7 +37,7 @@ a skills po změně nahlásí do katalogu Airine. Funguje i bez spojení.
 | Cesta | Co to je |
 |---|---|
 | `Sources/AirineCore` | Místní kopie (SQLite), fronta hlášení, synchronizace, hlavičky, doporučení, místní MCP |
-| `Sources/airine` | Příkaz `airine`: hooky, `sync`, `stav`, `propoj`, `vyres`, `mcp` |
+| `Sources/airine` | Příkaz `airine`: hooky, `sync`, `stav`, `propoj`, `vyres`, `obsah`, `nahraj-obsah`, `mcp` |
 | `Sources/AirineLista` | Aplikace v liště (SwiftUI `MenuBarExtra`) |
 | `claude-plugin` | Plugin pro Claude Code: hooky SessionStart a PostToolUse, MCP server `airine mcp` |
 

@@ -16,6 +16,9 @@ airine — plugin Airine pro Claude Code a Cursor
   airine nahlas <cesta> | --hook  zařadí soubor do fronty hlášení
   airine vyres <id>               po sloučení rozporu: další hlášení naváže na verzi v Airine
   airine vrat <id> [<id>…]        vrátí archivované karty mezi platné
+  airine obsah [ano|ne]           posílat s kartou i obsah souboru (výchozí ano)
+  airine nahraj-obsah [--koren CESTA]… [--zkouska]
+                                  pošle obsah karet, které ho v Airine nemají
   airine mcp                      místní MCP server přes stdio
 """
 
@@ -80,7 +83,8 @@ case "sync":
     do {
         let v = try await Synchronizace.spust(domov: domov, kopie: kopie) { HttpAirine(nastaveni: $0, token: t) }
         if !tise {
-            print(v.online ? "Synchronizováno: odesláno \(v.odeslano), staženo \(v.stazeno), smazáno \(v.smazano)." : "Airine neodpovídá, fronta počká.")
+            print(v.online ? "Synchronizováno: odesláno \(v.odeslano) (s obsahem \(v.obsahu)), staženo \(v.stazeno), smazáno \(v.smazano)." : "Airine neodpovídá, fronta počká.")
+            if !v.bezObsahu.isEmpty { print("Obsah neprošel, odešla jen karta: \(v.bezObsahu.joined(separator: ", "))") }
             if v.odmitnuto > 0 { print("Odmítnutá hlášení: \(v.odmitnuto) (airine stav)") }
             if v.smazanych > 0 { print("Karty smazané v Airine: \(v.smazanych), dál se nehlásí.") }
             if !v.rozpory.isEmpty { print("Rozpory: \(v.rozpory.joined(separator: ", "))") }
@@ -92,7 +96,7 @@ case "stav":
     let (kopie, n) = otevri()
     let f = (try? kopie.fronta(vcetneOdmitnutych: true)) ?? []
     print("Server: \(n.server)  zařízení: \(n.nazevZarizeni) (\(n.zarizeni))")
-    print("Přihlášen: \(api(n) == nil ? "ne" : "ano")")
+    print("Přihlášen: \(api(n) == nil ? "ne" : "ano")  posílat obsah: \(n.posilatObsah ? "ano" : "ne")")
     print("Poslední synchronizace: \(kopie.posledniSynchronizace.map { "\($0)" } ?? "nikdy")")
     print("Karet v kopii: \((try? kopie.karty().count) ?? 0)  ve frontě: \(f.filter { $0.odmitnuto == nil }.count)")
     for p in f where p.odmitnuto != nil {
@@ -169,6 +173,37 @@ case "vrat":
     } catch ChybaServeru.bezSpojeni {
         chyba("Airine neodpovídá, zkus to znovu.")
     } catch { chyba("Vrácení selhalo: \(error)") }
+
+case "obsah":
+    var (_, n) = otevri()
+    switch argumenty.first {
+    case "ano": n.posilatObsah = true
+    case "ne": n.posilatObsah = false
+    case nil: break
+    default: chyba("airine obsah [ano|ne]")
+    }
+    if argumenty.first != nil { do { try n.uloz(domov) } catch { chyba("Nastavení nejde uložit: \(error)") } }
+    print("Posílat obsah souborů: \(n.posilatObsah ? "ano" : "ne")")
+
+case "nahraj-obsah":
+    let zkouska = prepinac("--zkouska")
+    var koreny: [URL] = []
+    while let k = volba("--koren") { koreny.append(URL(fileURLWithPath: (k as NSString).expandingTildeInPath, isDirectory: true)) }
+    let (kopie, n) = otevri()
+    guard let t = token() else { chyba("Nejsi přihlášený: airine prihlas") }
+    guard n.posilatObsah || zkouska else { chyba("Posílání obsahu je vypnuté (airine obsah ano).") }
+    do {
+        // Nejdřív čerstvá kopie: podle ní plugin pozná, co Airine už má.
+        _ = try await Synchronizace.spust(domov: domov, kopie: kopie) { HttpAirine(nastaveni: $0, token: t) }
+        let v = try await Obsah.dohon(kopie: kopie, api: HttpAirine(nastaveni: try Nastaveni.nacti(domov), token: t),
+                                      koreny: koreny, zkouska: zkouska)
+        print((zkouska ? "Zkouška, nic neodešlo. Poslal bych: " : "Nahráno: ") + "\(v.nahrano)")
+        print("Soubor na tomhle Macu není: \(v.bezSouboru)  na disku je jiná verze: \(v.jinaVerze)  bez práva: \(v.bezPrava)")
+        if !v.chyby.isEmpty { print("Neprošlo (\(v.chyby.count)): \(v.chyby.joined(separator: ", "))") }
+        if !v.online { print("Airine přestala odpovídat, zbývá \(v.zbyva). Spusť znovu.") }
+        if v.neprihlasen { print("Token neplatí nebo nemáš modul Znalosti.") }
+        if !zkouska { _ = try await Synchronizace.spust(domov: domov, kopie: kopie) { HttpAirine(nastaveni: $0, token: t) } }
+    } catch { chyba("Nahrání obsahu selhalo: \(error)") }
 
 case "mcp":
     let (kopie, _) = otevri()
