@@ -9,9 +9,11 @@ public final class MistniMcp: @unchecked Sendable {
     /// Složky pro Znalosti, čtené při každém hlášení (lišta je může změnit);
     /// `nil` = bez omezení.
     let slozky: @Sendable () -> [String]?
+    let zarizeni: @Sendable () -> String?
 
-    public init(kopie: Kopie, synchronizuj: (@Sendable () async -> Void)? = nil, slozky: @escaping @Sendable () -> [String]? = { nil }) {
-        self.kopie = kopie; self.synchronizuj = synchronizuj; self.slozky = slozky
+    public init(kopie: Kopie, synchronizuj: (@Sendable () async -> Void)? = nil, slozky: @escaping @Sendable () -> [String]? = { nil },
+                zarizeni: @escaping @Sendable () -> String? = { nil }) {
+        self.kopie = kopie; self.synchronizuj = synchronizuj; self.slozky = slozky; self.zarizeni = zarizeni
     }
 
     nonisolated(unsafe) static let nastroje: [[String: Any]] = [
@@ -71,13 +73,14 @@ public final class MistniMcp: @unchecked Sendable {
             return try Doporuceni(kopie: kopie, projekt: projekt).text(fronta: kopie.fronta().count)
         case "nahlas_soubor":
             guard let cesta = arg["cesta"] as? String else { return "Chybí cesta." }
-            let v = try Nahlasovani(kopie: kopie, slozky: slozky()).nahlas(cesta: cesta)
+            let v = try Nahlasovani(kopie: kopie, slozky: slozky(), zarizeni: zarizeni()).nahlas(cesta: cesta)
             if case .zarazeno = v { await synchronizuj?() }
             switch v {
-            case .zarazeno(let id, _):
+            case .zarazeno(let id, _, let rada):
                 let odm = try kopie.fronta(vcetneOdmitnutych: true).filter { $0.hlaseni.id == id }.compactMap(\.odmitnuto).flatMap(\.chyby)
                 let ceka = try kopie.fronta().contains { $0.hlaseni.id == id }
                 var t = ceka ? "Uloženo do fronty, odešle se po obnovení spojení (karta \(id))." : "Nahlášeno do Airine (karta \(id))."
+                if let rada { t += "\n" + rada }
                 if !odm.isEmpty { t += "\nAirine hlášení odmítla, oprav hlavičku a nahlas znovu:\n" + odm.map { "- \($0.pole): \($0.zprava)" }.joined(separator: "\n") }
                 return t
             case .beze_zmeny: return "Beze změny od posledního hlášení."

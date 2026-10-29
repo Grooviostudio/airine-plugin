@@ -10,9 +10,12 @@ public struct Synchronizace: Sendable {
     let obsah: Bool
     /// Vzory, jejichž obsah neodejde (`Nastaveni.vynechatObsah`).
     let vynechat: [String]
+    /// Pauza po každém nahraném obsahu: úložiště serveru při rychlé dávce
+    /// vrací 429 (lišta po startu může mít ve frontě stovky souborů).
+    let pauza: Duration
 
-    public init(kopie: Kopie, api: AirineAPI, obsah: Bool = true, vynechat: [String] = []) {
-        self.kopie = kopie; self.api = api; self.obsah = obsah; self.vynechat = vynechat
+    public init(kopie: Kopie, api: AirineAPI, obsah: Bool = true, vynechat: [String] = [], pauza: Duration = .zero) {
+        self.kopie = kopie; self.api = api; self.obsah = obsah; self.vynechat = vynechat; self.pauza = pauza
     }
 
     public struct Vysledek: Sendable, Equatable {
@@ -28,18 +31,20 @@ public struct Synchronizace: Sendable {
         public var nesoulad: [String] = []       // id karet, kde se hlášení liší od hlavičky souboru
         public var obsahu = 0                    // hlášení, která odešla i s obsahem
         public var bezObsahu: [String] = []      // obsah neprošel (strop, kvóta), odešla jen karta
+        public var zmizelo = 0                   // místa, která server přestal počítat
     }
 
     /// Běh se vším, co potřebuje lišta i příkaz: když server řekne, že uuid
     /// zařízení patří jinému členovi, vezme si nové a zkusí to jednou znovu.
     /// Zařízení jde v hlavičce požadavku, fronta se proto nepřepisuje.
-    public static func spust(domov: Domov, kopie: Kopie, api: @Sendable (Nastaveni) -> AirineAPI) async throws -> Vysledek {
+    public static func spust(domov: Domov, kopie: Kopie, pauza: Duration = .zero,
+                             api: @Sendable (Nastaveni) -> AirineAPI) async throws -> Vysledek {
         var n = try Nastaveni.nacti(domov)
-        var v = try await Synchronizace(kopie: kopie, api: api(n), obsah: n.posilatObsah, vynechat: n.vynechatObsah).probehni()
+        var v = try await Synchronizace(kopie: kopie, api: api(n), obsah: n.posilatObsah, vynechat: n.vynechatObsah, pauza: pauza).probehni()
         if v.ciziZarizeni {
             n.zarizeni = UUID().uuidString.lowercased()
             try n.uloz(domov)
-            v = try await Synchronizace(kopie: kopie, api: api(n), obsah: n.posilatObsah, vynechat: n.vynechatObsah).probehni()
+            v = try await Synchronizace(kopie: kopie, api: api(n), obsah: n.posilatObsah, vynechat: n.vynechatObsah, pauza: pauza).probehni()
         }
         return v
     }
@@ -47,6 +52,7 @@ public struct Synchronizace: Sendable {
     public func probehni() async throws -> Vysledek {
         var v = Vysledek()
         try await odesliFrontu(&v)
+        if v.online && !v.neprihlasen && !v.ciziZarizeni { try await odesliZmizela(&v) }
         if v.online && !v.neprihlasen { try await stahni(&v) }
         if v.online && !v.neprihlasen { try kopie.nastavStav("posledni_sync", Date()) }
         return v
@@ -56,6 +62,9 @@ public struct Synchronizace: Sendable {
         for p in try kopie.fronta() {
             do {
                 let o = try await odesli(p.hlaseni, &v)
+                // Server poznal týž soubor z jiného zařízení (import složky) a vrátil
+                // id existující karty: soubor bez id v hlavičce se dál hlásí pod ním.
+                if o.id != p.hlaseni.id { try kopie.prevezmi(p.hlaseni, id: o.id) }
                 // Kartu samotnou přinese až kanál změn, tady jen příznak rozporu.
                 if o.stav == .rozpor || o.rozpor == true {
                     v.rozpory.append(p.hlaseni.id)
@@ -92,6 +101,23 @@ public struct Synchronizace: Sendable {
         }
     }
 
+    /// Zmizelá místa po dávkách. Server bez téhle cesty (404) nebo výpadek:
+    /// počkají do příště, karta se kvůli tomu nikdy nemění.
+    func odesliZmizela(_ v: inout Vysledek) async throws {
+        let f = try kopie.zmizela()
+        for i in stride(from: 0, to: f.count, by: 500) {
+            let davka = Array(f[i..<min(i + 500, f.count)])
+            do {
+                v.zmizelo += try await api.zmizela(davka)
+                try kopie.odeslanaZmizela(davka)
+            } catch ChybaServeru.neprihlasen {
+                v.neprihlasen = true; return
+            } catch {
+                return
+            }
+        }
+    }
+
     /// Hlášení s obsahem, když na disku leží přesně nahlášená verze; jinak
     /// (soubor se mezitím změnil, zmizel, obsah neprošel) samotná karta.
     func odesli(_ h: Hlaseni, _ v: inout Vysledek) async throws -> OdpovedHlaseni {
@@ -99,6 +125,7 @@ public struct Synchronizace: Sendable {
             do {
                 let odp = try await api.nahrajObsah(h, data: o.data, mime: o.mime)
                 v.obsahu += 1
+                if pauza > .zero { try? await Task.sleep(for: pauza) }
                 return odp
             } catch ChybaServeru.obsahNeprosel {
                 v.bezObsahu.append(h.id)

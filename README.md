@@ -29,16 +29,21 @@ a skills po změně nahlásí do katalogu Airine. Funguje i bez spojení.
   nevyjde. Vypíše rozpad podle přípony, soubory s tajemstvím a s `--vypis` i seznam souborů.
 - Místní kopie katalogu je v `~/Library/Application Support/Airine`, každý řádek
   šifrovaný (AES-GCM). Klíč i osobní token jsou v Klíčence.
-- Soubor se hlásí, jen když má v hlavičce jméno (malá písmena a pomlčky), popis a typ.
-  V bloku `airine:` mají `name` a `popis` přednost před `name` a `description` nahoře, typ je
-  `airine.typ`. U skillu (`SKILL.md` nebo `metadata.airine-id`) platí `name` a `description`
-  nahoře a typ je `skill`. Pravidlo je stejné jako na serveru. Jinak plugin soubor nehlásí
-  a agentovi řekne, co doplnit, i s návrhem jména. Hlavičku za něj nepíše.
+- Lišta sama hlídá vybrané složky (FSEvents, žádné procházení disku): změna souboru je
+  v Airine do minuty, ať ji udělal kdokoli. Smazaný soubor se odrazí jen v místech karty,
+  karta zůstává ([docs/hlidani.md](docs/hlidani.md)). `airine porovnej [--zkouska]`
+  porovná vybrané složky s místní kopií z terminálu.
+- Soubor bez hlavičky se hlásí taky, jako u importu složky: jméno z názvu souboru, typ
+  z cesty, popis prázdný. Do souboru se nepíše nic, karta se páruje podle cesty a otisku.
+- Soubor s hlavičkou `airine:`: v bloku mají `name` a `popis` přednost před `name`
+  a `description` nahoře, typ je `airine.typ`. U skillu (`SKILL.md` nebo `metadata.airine-id`)
+  platí `name` a `description` nahoře a typ je `skill`. Jméno ve špatném tvaru se nehlásí
+  a agent dostane návrh.
 - Soubor, který má na prvním řádku watermark (`<!-- airine vlastnik=… -->`), plugin přeskočí:
   nehlásí ho, nic do něj nepíše a agentovi nic neradí. Takové dokumenty mají vlastníka
   a historii v gitu.
-- Když úplná hlavička nemá `airine.id`, plugin ho doplní (u `SKILL.md` do `metadata.airine-id`).
-  Jinak soubor nemění.
+- Když hlavička `airine:` nemá `airine.id`, hook ho doplní (u `SKILL.md` do `metadata.airine-id`).
+  Hlídání lišty do souborů nepíše nikdy.
 - Nic neměří a nedělá snímky obrazovky.
 
 ## Části
@@ -46,7 +51,7 @@ a skills po změně nahlásí do katalogu Airine. Funguje i bez spojení.
 | Cesta | Co to je |
 |---|---|
 | `Sources/AirineCore` | Místní kopie (SQLite), fronta hlášení, synchronizace, hlavičky, doporučení, místní MCP |
-| `Sources/airine` | Příkaz `airine`: hooky, `sync`, `stav`, `propoj`, `vyres`, `slozky`, `obsah`, `vynech`, `nahraj-obsah`, `mcp` |
+| `Sources/airine` | Příkaz `airine`: hooky, `sync`, `stav`, `propoj`, `vyres`, `slozky`, `porovnej`, `obsah`, `vynech`, `nahraj-obsah`, `mcp` |
 | `Sources/AirineLista` | Aplikace v liště (SwiftUI `MenuBarExtra`) |
 | `claude-plugin` | Plugin pro Claude Code: hooky SessionStart a PostToolUse, MCP server `airine mcp` |
 

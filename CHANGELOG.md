@@ -2,6 +2,13 @@
 
 ## 29. 10. 2026
 
+- **Lišta hlídá vybrané složky.** Změna MD souboru je v Airine do minuty, ať ji udělal
+  kdokoli (FSEvents, slévání 5 s, žádné procházení disku; po startu jedno porovnání otisků).
+  Smazaný nebo přesunutý soubor se odrazí jen v místech karty, karta zůstává. Bez spojení
+  fronta. `airine porovnej [--zkouska]` ([docs/hlidani.md](docs/hlidani.md)).
+- **Soubor bez hlavičky se hlásí.** Jméno z názvu souboru, typ z cesty jako u importu
+  z prohlížeče, popis prázdný. Do souboru se nepíše, ani `airine.id`; karta se páruje podle
+  cesty a otisku. Popis a vazby doplněné v Airine další verze souboru nepřepíše.
 - **Složky pro Znalosti.** Plugin hlásí jen soubory ze složek, které si člověk vybere
   (`airine slozky`, dialog v liště). Výchozí seznam je prázdný: dokud nic nevybereš,
   plugin nehlásí nic. Pracovní kopie (`.claude/worktrees`) a skryté složky kromě míst se

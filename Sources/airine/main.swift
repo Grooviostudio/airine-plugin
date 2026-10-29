@@ -19,6 +19,7 @@ airine — plugin Airine pro Claude Code a Cursor
   airine obsah [ano|ne]           posílat s kartou i obsah souboru (výchozí ano)
   airine slozky [pridej CESTA…] [--zrus CESTA]
                                   složky pro Znalosti: hlásí se jen soubory v nich
+  airine porovnej [--zkouska]     projde vybrané složky a zařadí změněné soubory (jako lišta po startu)
   airine vynech [VZOR…] [--zrus VZOR]
                                   složky, jejichž obsah nikdy neodejde (jen karta)
   airine nahraj-obsah [--koren CESTA]… [--vynech VZOR]… [--pauza MS] [--zkouska] [--vypis]
@@ -145,7 +146,7 @@ case "nahlas":
     guard let cesta else { if hook { exit(0) }; chyba("airine nahlas <cesta>") }
     let (kopie, n) = otevri()
     do {
-        let v = try Nahlasovani(kopie: kopie, slozky: n.slozky).nahlas(cesta: cesta)
+        let v = try Nahlasovani(kopie: kopie, slozky: n.slozky, zarizeni: n.zarizeni).nahlas(cesta: cesta)
         if case .zarazeno = v, api(n) != nil { synchronizujNaPozadi() }
         if hook, let t = v.proAgenta {
             // Claude Code dá text agentovi; ten hlavičku doplní, plugin soubor nepřepisuje.
@@ -213,6 +214,23 @@ case "slozky":
     print(n.slozky.isEmpty ? "Airine zatím nebere z žádné složky. Vyber: airine slozky pridej CESTA"
                            : "Airine bere z:\n" + n.slozky.map { "  " + $0 }.joined(separator: "\n"))
 
+case "porovnej":
+    // Totéž, co lišta udělá po startu: projde vybrané složky a zařadí, co se změnilo.
+    let zkouska = prepinac("--zkouska")
+    let (kopie, n) = otevri()
+    guard !n.slozky.isEmpty else { chyba("Airine zatím nebere z žádné složky. Vyber: airine slozky pridej CESTA") }
+    do {
+        let v = try Hlidani(kopie: kopie, slozky: n.slozky, zarizeni: n.zarizeni, zkouska: zkouska).porovnej()
+        print((zkouska ? "Zkouška, nic se nezařadilo.\n" : "") + """
+            Nové karty: \(v.nove)
+            Nová verze: \(v.zmenene)
+            Beze změny: \(v.bezeZmeny)
+            Přeskočeno podle pravidel: \(v.preskoceno)
+            Zmizelá místa: \(v.zmizelo)
+            """)
+        if !zkouska && (v.zarazeno > 0 || v.zmizelo > 0), api(n) != nil { synchronizujNaPozadi() }
+    } catch { chyba("Porovnání selhalo: \(error)") }
+
 case "vynech":
     var n: Nastaveni
     do { n = try Nastaveni.nacti(domov) } catch { chyba("Nastavení nejde načíst: \(error)") }
@@ -269,7 +287,7 @@ case "mcp":
     let d = domov
     let server = MistniMcp(kopie: kopie, synchronizuj: token().map { t in
         { @Sendable in _ = try? await Synchronizace.spust(domov: d, kopie: kopie) { HttpAirine(nastaveni: $0, token: t) } }
-    }, slozky: { (try? Nastaveni.nacti(d))?.slozky ?? [] })
+    }, slozky: { (try? Nastaveni.nacti(d))?.slozky ?? [] }, zarizeni: { (try? Nastaveni.nacti(d))?.zarizeni })
     while let radek = readLine(strippingNewline: true) {
         if radek.isEmpty { continue }
         if let odp = await server.zpracuj(radek) {

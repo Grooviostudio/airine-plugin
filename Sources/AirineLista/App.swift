@@ -2,8 +2,8 @@ import AirineCore
 import SwiftUI
 
 // Aplikace v liště: drží synchronizaci (každou minutu a hned po hlášení),
-// ukazuje stav a rozpory. KOSTRA — přihlášení, souhlas s měřením a připojení
-// Cursoru přibudou v dalších krocích.
+// hlídá vybrané složky (FSEvents) a ukazuje stav a rozpory. KOSTRA —
+// přihlášení, souhlas s měřením a připojení Cursoru přibudou v dalších krocích.
 
 @MainActor
 final class Stav: ObservableObject {
@@ -17,14 +17,20 @@ final class Stav: ObservableObject {
     @Published var slozky: [String] = []
     /// Dialog se složkami se po přihlášení ukáže jednou za běh, ne každou minutu.
     var dotazanoNaSlozky = false
+    /// Jedna synchronizace naráz (časovač, hlídání a tlačítko se můžou potkat).
+    var synchronizuje = false
+    var znovu = false
 
     let domov = Domov()
     var kopie: Kopie?
     var casovac: Timer?
+    var hlidac: Hlidac?
+    var hlidaneSlozky: [String] = []
 
     init() {
         kopie = try? Kopie.otevri(domov)
         obnov()
+        hlidej()
         casovac = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.synchronizuj() }
         }
@@ -43,6 +49,7 @@ final class Stav: ObservableObject {
         let n = try? Nastaveni.nacti(domov)
         posilatObsah = n?.posilatObsah ?? true
         slozky = n?.slozky ?? []
+        hlidej()
         let f = (try? kopie.fronta(vcetneOdmitnutych: true)) ?? []
         fronta = f.filter { $0.odmitnuto == nil }.count
         odmitnuto = f.count - fronta
@@ -71,6 +78,29 @@ final class Stav: ObservableObject {
         n.slozky = panel.urls.map { Slozky.normalizuj($0.path) }
         try? n.uloz(domov)
         slozky = n.slozky
+        hlidej()
+    }
+
+    /// Hlídání vybraných složek. Po startu a po změně výběru jednou porovná
+    /// otisky ve složkách (co se změnilo, když lišta neběžela), pak už jen
+    /// události FSEvents. Všechno běží na hlavním vlákně, stejně jako
+    /// synchronizace, ať se zápisy do místní kopie nepotkají.
+    func hlidej() {
+        guard slozky != hlidaneSlozky || hlidac == nil else { return }
+        hlidac?.zastav()
+        hlidaneSlozky = slozky
+        hlidac = slozky.isEmpty ? nil : Hlidac(slozky: slozky) { [weak self] cesty, vse in
+            self?.zpracuj(cesty, vse: vse)
+        }
+        if !slozky.isEmpty { Task { self.zpracuj([], vse: true) } }
+    }
+
+    func zpracuj(_ cesty: Set<String>, vse: Bool) {
+        guard let kopie, let n = try? Nastaveni.nacti(domov) else { return }
+        let h = Hlidani(kopie: kopie, slozky: n.slozky, zarizeni: n.zarizeni)
+        guard let v = try? (vse ? h.porovnej() : h.zpracuj(cesty)) else { return }
+        obnov()
+        if v.zarazeno > 0 || v.zmizelo > 0 { Task { await synchronizuj() } }
     }
 
     func synchronizuj() async {
@@ -81,7 +111,15 @@ final class Stav: ObservableObject {
             dotazanoNaSlozky = true
             vyberSlozky()
         }
-        if let v = try? await Synchronizace.spust(domov: domov, kopie: kopie, api: { HttpAirine(nastaveni: $0, token: t) }) {
+        // Běží-li už jedna, proběhne ještě jednou hned po ní (nové hlášení nečeká minutu).
+        guard !synchronizuje else { znovu = true; return }
+        synchronizuje = true
+        defer {
+            synchronizuje = false
+            if znovu { znovu = false; Task { await synchronizuj() } }
+        }
+        if let v = try? await Synchronizace.spust(domov: domov, kopie: kopie, pauza: .milliseconds(500),
+                                                  api: { HttpAirine(nastaveni: $0, token: t) }) {
             online = v.online
             prihlasen = !v.neprihlasen
             rozpory = v.rozpory

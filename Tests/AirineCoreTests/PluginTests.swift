@@ -50,6 +50,7 @@ actor MockServer: AirineAPI {
         if smazane.contains(h.id) { throw ChybaServeru.smazano }
         if h.name == nil || h.name!.isEmpty { throw ChybaServeru.odmitnuto(Odmitnuti(chyby: [ChybaPole(pole: "name", zprava: "chybí", kod: "chybi")])) }
         if verze[h.id]?.contains(h.otisk) == true { return OdpovedHlaseni(stav: .uz_prijato, id: h.id, otisk: h.otisk) }
+        if karty[h.id] == nil, let jine = prevzit[h.otisk] { return OdpovedHlaseni(stav: .uz_prijato, id: jine, otisk: h.otisk) }
         var k = karty[h.id] ?? Karta(id: h.id, name: h.name ?? "")
         let rozpor = k.otisk != nil && h.otisk_predchozi != k.otisk
         verze[h.id, default: []].append(h.otisk)
@@ -66,6 +67,19 @@ actor MockServer: AirineAPI {
     }
 
     func pocetVerzi(_ id: String) -> Int { verze[id]?.count ?? 0 }
+
+    /// `/api/katalog/mista/zmizela`; `nil` = server ji ještě nemá (404).
+    var zmizelaPrijata: [ZmizeleMisto]? = nil
+    func prijimejZmizela() { zmizelaPrijata = [] }
+    func zmizela(_ mista: [ZmizeleMisto]) async throws -> Int {
+        guard online else { throw ChybaServeru.bezSpojeni }
+        guard zmizelaPrijata != nil else { throw ChybaServeru.jine(404, "") }
+        zmizelaPrijata! += mista
+        return mista.count
+    }
+    /// Jako převzetí u `katalog_hlaseni` (243): neznámé id se stejným otiskem a cestou.
+    var prevzit: [String: String] = [:]          // otisk → id existující karty
+    func nastavPrevzeti(otisk: String, id: String) { prevzit[otisk] = id }
 
     /// Jako `/nahrat` + `/potvrdit`: bajty musí sedět s otiskem, pak se kartě
     /// té verze nastaví `ulozeny_otisk`. `odmitniObsah` = strop nebo kvóta.
@@ -169,7 +183,7 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
         let cesta = try soubor(d, "brief.md", "---\nname: brief\ndescription: Brief\nairine:\n  typ: brief\n---\nA\n")
 
         await server.nastav(online: false)
-        guard case .zarazeno(let id, _) = try n.nahlas(cesta: cesta) else { Issue.record("nezařazeno"); return }
+        guard case .zarazeno(let id, _, _) = try n.nahlas(cesta: cesta) else { Issue.record("nezařazeno"); return }
         #expect(Hlavicka.precti(try String(contentsOfFile: cesta, encoding: .utf8)).airine["id"] == id)
         var v = try await Synchronizace(kopie: k, api: server).probehni()
         #expect(!v.online && v.odeslano == 0)
@@ -233,7 +247,7 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
         let d = try docasnyDomov(); let k = try kopie(d)
         let cesta = try soubor(d, "b.md", "---\nname: b\ndescription: d\nairine:\n  typ: brief\n  id: k3\n---\n1\n")
         let n = Nahlasovani(kopie: k)
-        guard case .zarazeno(_, let o1) = try n.nahlas(cesta: cesta) else { Issue.record(""); return }
+        guard case .zarazeno(_, let o1, _) = try n.nahlas(cesta: cesta) else { Issue.record(""); return }
         try "---\nname: b\ndescription: d\nairine:\n  typ: brief\n  id: k3\n---\n2\n".write(toFile: cesta, atomically: true, encoding: .utf8)
         try n.nahlas(cesta: cesta)
         let f = try k.fronta()
@@ -398,7 +412,7 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
         _ = try await Synchronizace(kopie: k, api: server).probehni()
 
         try (hlavicka + "y\n").write(toFile: cesta, atomically: true, encoding: .utf8)
-        guard case .zarazeno(let id, _) = try Nahlasovani(kopie: k).nahlas(cesta: cesta) else { Issue.record("nezařazeno"); return }
+        guard case .zarazeno(let id, _, _) = try Nahlasovani(kopie: k).nahlas(cesta: cesta) else { Issue.record("nezařazeno"); return }
         #expect(id == "a2")                                   // stejná karta, ne nová
         _ = try await Synchronizace(kopie: k, api: server).probehni()
         #expect(await server.karty.count == 1)
@@ -463,15 +477,59 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
 }
 
 @Suite struct BezKartyTests {
-    @Test func neuplnaHlavickaSeNehlasiANicNepise() throws {
+    /// Soubor bez hlavičky dostane kartu jako u importu složky (29. 10. 2026):
+    /// jméno ze souboru, typ z cesty, prázdný popis. Do souboru se nepíše.
+    @Test func bezHlavickySeHlasiANicNepise() throws {
         let d = try docasnyDomov(); let k = try kopie(d)
-        let telo = "---\ndescription: Zápis\n---\nx\n"
-        let cesta = try soubor(d, "Zápis schůzky.md", telo)
+        let telo = "---\ndescription: Cizí popis\n---\nx\n"
+        let cesta = try soubor(d, "Schůzky/Zápis schůzky.md", telo)
         let v = try Nahlasovani(kopie: k).nahlas(cesta: cesta)
-        #expect(v == .bezKarty(chybi: ["name", "airine.typ"], navrhJmena: "zapis-schuzky"))
+        guard case .zarazeno(let id, _, let rada) = v else { Issue.record("nezařazeno: \(v)"); return }
         #expect(try String(contentsOfFile: cesta, encoding: .utf8) == telo)
+        let h = try #require(try k.fronta().first?.hlaseni)
+        #expect(h.name == "zapis-schuzky" && h.typ == "zapis" && h.popis == "", "cizí description není naše")
+        #expect(rada?.contains("bez popisu") == true && v.proAgenta == rada)
+        // Druhé uložení beze změny = táž karta podle cesty, nic nového.
+        #expect(try Nahlasovani(kopie: k).nahlas(cesta: cesta) == .beze_zmeny)
+        try (telo + "y\n").write(toFile: cesta, atomically: true, encoding: .utf8)
+        guard case .zarazeno(let id2, _, _) = try Nahlasovani(kopie: k).nahlas(cesta: cesta) else { Issue.record(""); return }
+        #expect(id2 == id)
+        #expect(try k.fronta().last?.hlaseni.otisk_predchozi == h.otisk)
+    }
+
+    @Test func zlyTvarJmenaSeNehlasi() throws {
+        let d = try docasnyDomov(); let k = try kopie(d)
+        let cesta = try soubor(d, "a.md", "---\nairine:\n  name: Zápis Schůzky\n---\nx\n")
+        let v = try Nahlasovani(kopie: k).nahlas(cesta: cesta)
+        #expect(v == .bezKarty(chybi: ["name"], navrhJmena: "zapis-schuzky"))
         #expect(try k.fronta().isEmpty)
-        #expect(v.proAgenta?.contains("name: zapis-schuzky") == true)
+    }
+
+    @Test func popisAVazbyZKartyZustanou() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        let cesta = try soubor(d, "brief.md", "jen text\n")
+        guard case .zarazeno(let id, _, _) = try Nahlasovani(kopie: k).nahlas(cesta: cesta) else { Issue.record(""); return }
+        _ = try await Synchronizace(kopie: k, api: server).probehni()
+        // Popis doplněný v Revizi se novou verzí souboru nesmaže.
+        var karta = try #require(try k.karta(id)); karta.popis = "Doplněno v Airine"; karta.typ = "postup"
+        try k.ulozKarty([karta])
+        try "jiný text\n".write(toFile: cesta, atomically: true, encoding: .utf8)
+        guard case .zarazeno(_, _, let rada) = try Nahlasovani(kopie: k).nahlas(cesta: cesta) else { Issue.record(""); return }
+        let h = try #require(try k.fronta().last?.hlaseni)
+        #expect(h.popis == "Doplněno v Airine" && h.typ == "postup")
+        #expect(rada == nil)
+    }
+
+    @Test func typZCestyJakoImport() {
+        #expect(Nahlasovani.typZCesty("/G/Klienti/Brief webu.md", koren: "/G") == "brief")
+        #expect(Nahlasovani.typZCesty("/G/Nabídky/2026/x.md", koren: "/G") == "nabidka")
+        #expect(Nahlasovani.typZCesty("/G/Návody/a.md", koren: "/G") == "postup")
+        #expect(Nahlasovani.typZCesty("/G/Briefing/a.md", koren: "/G") == "brief")
+        #expect(Nahlasovani.typZCesty("/G/Debrief/a.md", koren: "/G") == "poznamky", "slovo musí začínat")
+        #expect(Nahlasovani.typZCesty("/G/x/SKILL.md", koren: "/G") == "skill")
+        #expect(Nahlasovani.typZCesty("/Brief/a.md", koren: "/Brief") == "poznamky", "název vybrané složky se nepočítá")
+        #expect(Nahlasovani.jmenoZCesty("/G/nabidka/SKILL.md") == "nabidka")
+        #expect(Nahlasovani.jmenoZCesty("/G/!!!.md") == "soubor")
     }
 
     @Test func dokumentSWatermarkemSePreskoci() throws {
@@ -973,5 +1031,100 @@ final class Podstrceny: URLProtocol, @unchecked Sendable {
     @Test func nastaveniBezSlozekJePrazdne() throws {
         let stare = #"{"server":"s","zarizeni":"z","nazevZarizeni":"Mac"}"#
         #expect(try JSONDecoder().decode(Nastaveni.self, from: Data(stare.utf8)).slozky.isEmpty)
+    }
+}
+
+@Suite struct HlidaniTests {
+    let sHlavickou = "---\nname: brief\ndescription: Brief\nairine:\n  typ: brief\n---\nTělo\n"
+
+    func slozky(_ d: Domov) -> [String] { [d.slozka.appendingPathComponent("prace/Znalosti").path] }
+
+    @Test func zmenaNovySouborASmazani() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        let h = Hlidani(kopie: k, slozky: slozky(d), zarizeni: "z1")
+        let rucne = try soubor(d, "Znalosti/Poznámky/porada.md", "# Porada\n")
+        let mimo = try soubor(d, "Jinde/a.md", "# A\n")
+        let agent = try soubor(d, "Znalosti/brief.md", sHlavickou)
+        var v = try h.zpracuj([rucne, mimo, agent])
+        #expect(v.nove == 2 && v.preskoceno == 1)
+        #expect(try String(contentsOfFile: agent, encoding: .utf8) == sHlavickou, "hlídání do souboru nepíše ani id")
+        // Editor uloží dvakrát totéž: nic nového.
+        v = try h.zpracuj([rucne])
+        #expect(v.bezeZmeny == 1 && v.zarazeno == 0)
+        _ = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(try k.fronta().isEmpty)
+
+        try FileManager.default.removeItem(atPath: rucne)
+        v = try h.zpracuj([rucne])
+        #expect(v.zmizelo == 1)
+        #expect(try k.zmizela().map(\.cesta) == [rucne])
+        // Server cestu ještě nemá: místo počká, karta zůstane.
+        var s = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(try s.online && s.zmizelo == 0 && k.zmizela().count == 1)
+        #expect(try k.karty().count == 2)
+        await server.prijimejZmizela()
+        s = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(try s.zmizelo == 1 && k.zmizela().isEmpty)
+        #expect(await server.zmizelaPrijata?.map(\.cesta) == [rucne])
+        // Druhá událost téže cesty už nic nezařadí.
+        #expect(try h.zpracuj([rucne]).zmizelo == 0)
+    }
+
+    @Test func presunJeTataKarta() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        let h = Hlidani(kopie: k, slozky: slozky(d), zarizeni: nil)
+        let stara = try soubor(d, "Znalosti/a/porada.md", "# Porada\n")
+        _ = try h.zpracuj([stara])
+        let id = try #require(try k.fronta().first?.hlaseni.id)
+        _ = try await Synchronizace(kopie: k, api: server).probehni()
+        let nova = d.slozka.appendingPathComponent("prace/Znalosti/b/porada.md").path
+        try FileManager.default.createDirectory(atPath: (nova as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+        try FileManager.default.moveItem(atPath: stara, toPath: nova)
+        let v = try h.zpracuj([stara, nova])
+        #expect(v.zmizelo == 1 && v.zmenene == 1 && v.nove == 0)
+        let hl = try #require(try k.fronta().first?.hlaseni)
+        #expect(hl.id == id && hl.cesta == nova)
+    }
+
+    @Test func smazanaSlozka() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d)
+        let h = Hlidani(kopie: k, slozky: slozky(d), zarizeni: nil)
+        let a = try soubor(d, "Znalosti/Stare/a.md", "A\n"), b = try soubor(d, "Znalosti/Stare/b.md", "B\n")
+        _ = try h.zpracuj([a, b])
+        try FileManager.default.removeItem(atPath: (a as NSString).deletingLastPathComponent)
+        #expect(try h.zpracuj([(a as NSString).deletingLastPathComponent]).zmizelo == 2)
+    }
+
+    @Test func porovnaniPoStartu() throws {
+        let d = try docasnyDomov(); let k = try kopie(d)
+        _ = try soubor(d, "Znalosti/a.md", "A\n")
+        _ = try soubor(d, "Znalosti/.git/x.md", "X\n")
+        _ = try soubor(d, "Znalosti/.obsidian/x.md", "X\n")
+        _ = try soubor(d, "Znalosti/.claude/worktrees/w/b.md", "B\n")
+        _ = try soubor(d, "Znalosti/.claude/skills/nabidka/SKILL.md", "---\nname: nabidka\ndescription: Nabídka\n---\nx\n")
+        _ = try soubor(d, "Znalosti/obrazek.png", "P")
+        _ = try soubor(d, "Jinde/c.md", "C\n")
+        let zkouska = try Hlidani(kopie: k, slozky: slozky(d), zarizeni: nil, zkouska: true).porovnej()
+        #expect(try zkouska.nove == 2 && k.fronta().isEmpty, "zkouška nic nezařadí")
+        let v = try Hlidani(kopie: k, slozky: slozky(d), zarizeni: nil).porovnej()
+        #expect(v.nove == 2)
+        #expect(Set(try k.fronta().map(\.hlaseni.name)) == ["a", "nabidka"])
+        #expect(try Hlidani(kopie: k, slozky: slozky(d), zarizeni: nil).porovnej().bezeZmeny == 2)
+        #expect(try Hlidani(kopie: k, slozky: [], zarizeni: nil).porovnej() == Hlidani.Vysledek())
+    }
+
+    @Test func prevzetiKartyZImportu() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        let cesta = try soubor(d, "Znalosti/brief.md", "Text\n")
+        let otisk = Otisk.sha256(Data("Text\n".utf8))
+        await server.pridej(Karta(id: "z-importu", name: "brief", otisk: otisk))
+        await server.nastavPrevzeti(otisk: otisk, id: "z-importu")
+        let h = Hlidani(kopie: k, slozky: slozky(d), zarizeni: nil)
+        _ = try h.zpracuj([cesta])
+        #expect(try k.fronta().first?.hlaseni.id != "z-importu")
+        _ = try await Synchronizace(kopie: k, api: server).probehni()
+        try "Text 2\n".write(toFile: cesta, atomically: true, encoding: .utf8)
+        _ = try h.zpracuj([cesta])
+        #expect(try k.fronta().first?.hlaseni.id == "z-importu", "další verze jde pod převzatou kartu")
     }
 }

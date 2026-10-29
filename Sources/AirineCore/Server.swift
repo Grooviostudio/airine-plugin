@@ -11,6 +11,14 @@ public protocol AirineAPI: Sendable {
     /// táž jako u `nahlas`. Když obsah neprojde (strop, kvóta, úložiště),
     /// hází `obsahNeprosel` a volající pošle samotnou kartu.
     func nahrajObsah(_ h: Hlaseni, data: Data, mime: String) async throws -> OdpovedHlaseni
+    /// Místa, kde soubor na tomhle zařízení zmizel (POST /api/katalog/mista/zmizela).
+    /// Karta zůstane. Vrací počet míst, která přestala platit.
+    func zmizela(_ mista: [ZmizeleMisto]) async throws -> Int
+}
+
+extension AirineAPI {
+    /// Server bez téhle cesty: zmizelá místa počkají ve frontě.
+    public func zmizela(_ mista: [ZmizeleMisto]) async throws -> Int { throw ChybaServeru.jine(404, "zmizela") }
 }
 
 public enum ChybaServeru: Error, Equatable {
@@ -151,6 +159,13 @@ public struct HttpAirine: AirineAPI {
             throw Self.chybaHlaseni(d2, k2)
         }
         return try JSONDecoder().decode(OdpovedHlaseni.self, from: d2)
+    }
+
+    public func zmizela(_ mista: [ZmizeleMisto]) async throws -> Int {
+        let telo = try JSONEncoder().encode(["mista": mista])
+        let (data, kod) = try await posli(pozadavek("api/katalog/mista/zmizela", metoda: "POST", telo: telo))
+        guard (200..<300).contains(kod) else { throw Self.neocekavany(data, kod) }
+        return ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["zmizelo"] as? Int ?? 0
     }
 
     public func archiv(karty: [String], archivovat: Bool) async throws -> Int {

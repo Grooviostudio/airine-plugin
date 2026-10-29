@@ -16,7 +16,7 @@ airine slozky pridej ~/Dokumenty/Firma
 airine slozky --zrus ~/Dokumenty/Firma
 ```
 
-Výběr je nastavení tohohle Macu (`slozky` v `nastaveni.json`). Platí pro hook, místní MCP
+Výběr je nastavení tohohle Macu (`slozky` v `nastaveni.json`). Platí pro hook, hlídání lišty ([hlidani.md](hlidani.md)), místní MCP
 (`nahlas_soubor`) i `airine nahraj-obsah`.
 
 ## Co se nehlásí ani uvnitř vybraných složek
