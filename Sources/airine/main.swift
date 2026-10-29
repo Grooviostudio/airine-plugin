@@ -17,6 +17,8 @@ airine — plugin Airine pro Claude Code a Cursor
   airine vyres <id>               po sloučení rozporu: další hlášení naváže na verzi v Airine
   airine vrat <id> [<id>…]        vrátí archivované karty mezi platné
   airine obsah [ano|ne]           posílat s kartou i obsah souboru (výchozí ano)
+  airine slozky [pridej CESTA…] [--zrus CESTA]
+                                  složky pro Znalosti: hlásí se jen soubory v nich
   airine vynech [VZOR…] [--zrus VZOR]
                                   složky, jejichž obsah nikdy neodejde (jen karta)
   airine nahraj-obsah [--koren CESTA]… [--vynech VZOR]… [--pauza MS] [--zkouska] [--vypis]
@@ -100,6 +102,7 @@ case "stav":
     print("Server: \(n.server)  zařízení: \(n.nazevZarizeni) (\(n.zarizeni))")
     print("Přihlášen: \(api(n) == nil ? "ne" : "ano")  posílat obsah: \(n.posilatObsah ? "ano" : "ne")")
     print("Poslední synchronizace: \(kopie.posledniSynchronizace.map { "\($0)" } ?? "nikdy")")
+    print("Airine bere z: " + (n.slozky.isEmpty ? "zatím žádné složky (airine slozky pridej CESTA)" : n.slozky.joined(separator: ", ")))
     print("Karet v kopii: \((try? kopie.karty().count) ?? 0)  ve frontě: \(f.filter { $0.odmitnuto == nil }.count)")
     for p in f where p.odmitnuto != nil {
         print("Odmítnuto \(p.hlaseni.cesta ?? p.hlaseni.id): " + p.odmitnuto!.chyby.map { "\($0.pole) \($0.zprava)" }.joined(separator: "; "))
@@ -142,7 +145,7 @@ case "nahlas":
     guard let cesta else { if hook { exit(0) }; chyba("airine nahlas <cesta>") }
     let (kopie, n) = otevri()
     do {
-        let v = try Nahlasovani(kopie: kopie).nahlas(cesta: cesta)
+        let v = try Nahlasovani(kopie: kopie, slozky: n.slozky).nahlas(cesta: cesta)
         if case .zarazeno = v, api(n) != nil { synchronizujNaPozadi() }
         if hook, let t = v.proAgenta {
             // Claude Code dá text agentovi; ten hlavičku doplní, plugin soubor nepřepisuje.
@@ -187,6 +190,29 @@ case "obsah":
     if argumenty.first != nil { do { try n.uloz(domov) } catch { chyba("Nastavení nejde uložit: \(error)") } }
     print("Posílat obsah souborů: \(n.posilatObsah ? "ano" : "ne")")
 
+case "slozky":
+    var n: Nastaveni
+    do { n = try Nastaveni.nacti(domov) } catch { chyba("Nastavení nejde načíst: \(error)") }
+    var zrusit: [String] = []
+    while let z = volba("--zrus") { zrusit.append(Slozky.normalizuj(z)) }
+    var pridat: [String] = []
+    if argumenty.first == "pridej" {
+        for c in argumenty.dropFirst() {
+            let p = Slozky.normalizuj(c)
+            var slozka: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: p, isDirectory: &slozka), slozka.boolValue else { chyba("Složka neexistuje: \(p)") }
+            pridat.append(p)
+        }
+        guard !pridat.isEmpty else { chyba("airine slozky pridej CESTA…") }
+    } else if let a = argumenty.first { chyba("Neznámý příkaz „\(a)“: airine slozky [pridej CESTA…] [--zrus CESTA]") }
+    if !zrusit.isEmpty || !pridat.isEmpty {
+        n.slozky.removeAll { zrusit.contains(Slozky.normalizuj($0)) }
+        for p in pridat where !n.slozky.contains(p) { n.slozky.append(p) }
+        do { try n.uloz(domov) } catch { chyba("Nastavení nejde uložit: \(error)") }
+    }
+    print(n.slozky.isEmpty ? "Airine zatím nebere z žádné složky. Vyber: airine slozky pridej CESTA"
+                           : "Airine bere z:\n" + n.slozky.map { "  " + $0 }.joined(separator: "\n"))
+
 case "vynech":
     var n: Nastaveni
     do { n = try Nastaveni.nacti(domov) } catch { chyba("Nastavení nejde načíst: \(error)") }
@@ -222,12 +248,13 @@ case "nahraj-obsah":
         _ = try await Synchronizace.spust(domov: domov, kopie: kopie) { HttpAirine(nastaveni: $0, token: t) }
         let m = try Nastaveni.nacti(domov)
         let v = try await Obsah.dohon(kopie: kopie, api: HttpAirine(nastaveni: m, token: t),
-                                      koreny: koreny, vynechat: m.vynechatObsah, zkouska: zkouska, pauza: pauza)
+                                      koreny: koreny, vynechat: m.vynechatObsah, slozky: m.slozky,
+                                      zkouska: zkouska, pauza: pauza)
         print((zkouska ? "Zkouška, nic neodešlo. Poslal bych: " : "Nahráno: ") + "\(v.nahrano)")
         let pripony = Dictionary(grouping: v.soubory) { URL(fileURLWithPath: $0).pathExtension.lowercased() }
             .map { "\($0.key): \($0.value.count)" }.sorted().joined(separator: "  ")
         if !pripony.isEmpty { print("Podle přípony: \(pripony)") }
-        print("Soubor na tomhle Macu není: \(v.bezSouboru)  na disku je jiná verze: \(v.jinaVerze)  nad 1 MB nebo prázdný: \(v.velke)  vynecháno: \(v.vynechano)  jiný typ: \(v.jinyTyp)  bez práva: \(v.bezPrava)")
+        print("Soubor na tomhle Macu není: \(v.bezSouboru)  na disku je jiná verze: \(v.jinaVerze)  nad 1 MB nebo prázdný: \(v.velke)  vynecháno: \(v.vynechano)  mimo složky: \(v.mimoSlozky)  jiný typ: \(v.jinyTyp)  bez práva: \(v.bezPrava)")
         // Soubory s tajemstvím odejdou jen jako karta; vypíšou se vždy, ať o nich člověk ví.
         if !v.tajne.isEmpty { print("Vypadá na tajemství, obsah neodejde (\(v.tajne.count)):"); v.tajne.forEach { print("  \($0)") } }
         if vypis { print("Soubory:"); v.soubory.forEach { print("  \($0)") } }
@@ -242,7 +269,7 @@ case "mcp":
     let d = domov
     let server = MistniMcp(kopie: kopie, synchronizuj: token().map { t in
         { @Sendable in _ = try? await Synchronizace.spust(domov: d, kopie: kopie) { HttpAirine(nastaveni: $0, token: t) } }
-    })
+    }, slozky: { (try? Nastaveni.nacti(d))?.slozky ?? [] })
     while let radek = readLine(strippingNewline: true) {
         if radek.isEmpty { continue }
         if let odp = await server.zpracuj(radek) {

@@ -919,3 +919,59 @@ final class Podstrceny: URLProtocol, @unchecked Sendable {
         }
     }
 }
+
+@Suite struct SlozkyTests {
+    let text = "---\nname: brief\ndescription: Brief\nairine:\n  typ: brief\n  id: sl1\n---\nTělo\n"
+
+    @Test func pravidla() {
+        let s = ["/Users/o/Groovio", "~/Desktop/Druha/"]
+        #expect(Slozky.duvod("/Users/o/Groovio/Klienti/a.md", s) == nil)
+        #expect(Slozky.duvod((("~/Desktop/Druha/b.md") as NSString).expandingTildeInPath, s) == nil)
+        #expect(Slozky.duvod("/Users/o/Groovio-stare/a.md", s) == "mimo složky pro Znalosti", "po složkách, ne po znacích")
+        #expect(Slozky.duvod("/Users/o/Jinde/a.md", s) == "mimo složky pro Znalosti")
+        #expect(Slozky.duvod("/Users/o/Groovio/Web/.claude/worktrees/x/CLAUDE.md", s) == "pracovní kopie repozitáře")
+        #expect(Slozky.duvod("/Users/o/Jinde/.claude/worktrees/x/a.md", []) == "pracovní kopie repozitáře")
+        #expect(Slozky.duvod("/Users/o/Groovio/.git/a.md", s) == "skrytá složka")
+        #expect(Slozky.duvod("/Users/o/Groovio/Web/.obsidian/a.md", s) == "skrytá složka")
+        #expect(Slozky.duvod("/Users/o/Groovio/.claude/skills/x/SKILL.md", s) == nil, "skills ve skryté složce se hlásí")
+        #expect(Slozky.duvod("/Users/o/Groovio/.cursor/rules/a.mdc", s) == nil)
+        #expect(Slozky.duvod("/Users/o/Groovio/.claude/settings/a.md", s) == "skrytá složka")
+        #expect(Slozky.duvod("/Users/o/.claude/skills/x/SKILL.md", ["/Users/o/.claude"]) == nil, "skrytá vybraná složka sama nevadí")
+        #expect(Slozky.duvod("/Users/o/Groovio/a.md", [])?.hasPrefix("není vybraná") == true)
+    }
+
+    @Test func hlasiJenVeVybranychSlozkach() throws {
+        let d = try docasnyDomov(); let k = try kopie(d)
+        let uvnitr = try soubor(d, "Znalosti/brief.md", text)
+        let mimo = try soubor(d, "Jinde/brief.md", text.replacingOccurrences(of: "sl1", with: "sl2"))
+        let bezHlavicky = try soubor(d, "Jinde/bez.md", "# Bez hlavičky\n")
+        let vybrane = [d.slozka.appendingPathComponent("prace/Znalosti").path]
+
+        #expect(try Nahlasovani(kopie: k, slozky: []).nahlas(cesta: uvnitr) == .preskoceno(Slozky.duvod(uvnitr, [])!), "nic, dokud nevybere")
+        #expect(try Nahlasovani(kopie: k, slozky: vybrane).nahlas(cesta: mimo) == .preskoceno("mimo složky pro Znalosti"))
+        #expect(try Nahlasovani(kopie: k, slozky: vybrane).nahlas(cesta: bezHlavicky) == .preskoceno("mimo složky pro Znalosti"),
+                "mimo složky ani rada agentovi")
+        guard case .zarazeno = try Nahlasovani(kopie: k, slozky: vybrane).nahlas(cesta: uvnitr) else { Issue.record("uvnitř se nenahlásil"); return }
+        #expect(try k.fronta().map(\.hlaseni.id) == ["sl1"])
+    }
+
+    @Test func dohnaniJenVeVybranychSlozkach() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        let a = try soubor(d, "Znalosti/a.md", "A\n"), b = try soubor(d, "Jinde/b.md", "B\n")
+        for (id, c, t) in [("a", a, "A\n"), ("b", b, "B\n")] {
+            var karta = Karta(id: id, name: id, popis: id, typ: "zapis", otisk: Otisk.sha256(Data(t.utf8)), mista: [Misto(cesta: c)])
+            karta.menit = true
+            await server.pridej(karta)
+        }
+        _ = try await Synchronizace(kopie: k, api: server).probehni()
+        let v = try await Obsah.dohon(kopie: k, api: server, slozky: [d.slozka.appendingPathComponent("prace/Znalosti").path])
+        #expect(v.nahrano == 1 && v.mimoSlozky == 1)
+        let (ma, mb) = (await server.maObsah("a"), await server.maObsah("b"))
+        #expect(ma && !mb)
+    }
+
+    @Test func nastaveniBezSlozekJePrazdne() throws {
+        let stare = #"{"server":"s","zarizeni":"z","nazevZarizeni":"Mac"}"#
+        #expect(try JSONDecoder().decode(Nastaveni.self, from: Data(stare.utf8)).slozky.isEmpty)
+    }
+}

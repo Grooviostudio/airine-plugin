@@ -6,9 +6,12 @@ import Foundation
 public final class MistniMcp: @unchecked Sendable {
     let kopie: Kopie
     let synchronizuj: (@Sendable () async -> Void)?
+    /// Složky pro Znalosti, čtené při každém hlášení (lišta je může změnit);
+    /// `nil` = bez omezení.
+    let slozky: @Sendable () -> [String]?
 
-    public init(kopie: Kopie, synchronizuj: (@Sendable () async -> Void)? = nil) {
-        self.kopie = kopie; self.synchronizuj = synchronizuj
+    public init(kopie: Kopie, synchronizuj: (@Sendable () async -> Void)? = nil, slozky: @escaping @Sendable () -> [String]? = { nil }) {
+        self.kopie = kopie; self.synchronizuj = synchronizuj; self.slozky = slozky
     }
 
     nonisolated(unsafe) static let nastroje: [[String: Any]] = [
@@ -68,7 +71,7 @@ public final class MistniMcp: @unchecked Sendable {
             return try Doporuceni(kopie: kopie, projekt: projekt).text(fronta: kopie.fronta().count)
         case "nahlas_soubor":
             guard let cesta = arg["cesta"] as? String else { return "Chybí cesta." }
-            let v = try Nahlasovani(kopie: kopie).nahlas(cesta: cesta)
+            let v = try Nahlasovani(kopie: kopie, slozky: slozky()).nahlas(cesta: cesta)
             if case .zarazeno = v { await synchronizuj?() }
             switch v {
             case .zarazeno(let id, _):

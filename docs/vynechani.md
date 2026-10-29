@@ -27,5 +27,5 @@ Typické důvody, kvůli kterým tahle volba vznikla (29. 10. 2026):
 | složka s denními zápisy zadání pro agenty | Soukromý text. O tom, jestli patří do Airine, rozhoduje jeho autor, ne plugin |
 | `**/.claude/worktrees/` | Pracovní kopie repozitářů. Jsou to duplicity souborů, které už v katalogu jsou |
 
-Pracovní kopie by v katalogu neměly být ani jako karty. Hook je zatím hlásí, vynechání
-jen zastaví jejich obsah. Nehlásit je vůbec je další krok.
+Pracovní kopie od 29. 10. 2026 plugin nehlásí vůbec, ani jako kartu
+([slozky.md](slozky.md)). Vzor tu zůstává kvůli kartám, které vznikly dřív.

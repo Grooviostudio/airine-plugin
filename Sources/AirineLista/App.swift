@@ -14,6 +14,9 @@ final class Stav: ObservableObject {
     @Published var prihlasen = false
     @Published var rozpory: [String] = []
     @Published var posilatObsah = true
+    @Published var slozky: [String] = []
+    /// Dialog se složkami se po přihlášení ukáže jednou za běh, ne každou minutu.
+    var dotazanoNaSlozky = false
 
     let domov = Domov()
     var kopie: Kopie?
@@ -37,7 +40,9 @@ final class Stav: ObservableObject {
     func obnov() {
         guard let kopie else { return }
         posledni = kopie.posledniSynchronizace
-        posilatObsah = (try? Nastaveni.nacti(domov))?.posilatObsah ?? true
+        let n = try? Nastaveni.nacti(domov)
+        posilatObsah = n?.posilatObsah ?? true
+        slozky = n?.slozky ?? []
         let f = (try? kopie.fronta(vcetneOdmitnutych: true)) ?? []
         fronta = f.filter { $0.odmitnuto == nil }.count
         odmitnuto = f.count - fronta
@@ -51,10 +56,31 @@ final class Stav: ObservableObject {
         posilatObsah = ano
     }
 
+    /// Finder: ze kterých složek Airine bere MD a skills. Výběr nahradí
+    /// dosavadní seznam; zrušený dialog nic nemění.
+    func vyberSlozky() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = true
+        panel.message = "Ze kterých složek má Airine brát MD dokumenty a skills? Mimo ně nepůjde do Airine nic."
+        panel.prompt = "Brát z těchto složek"
+        if let prvni = slozky.first { panel.directoryURL = URL(fileURLWithPath: prvni) }
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, !panel.urls.isEmpty, var n = try? Nastaveni.nacti(domov) else { return }
+        n.slozky = panel.urls.map { Slozky.normalizuj($0.path) }
+        try? n.uloz(domov)
+        slozky = n.slozky
+    }
+
     func synchronizuj() async {
         guard let kopie else { return }
         guard let t = token() else { prihlasen = false; obnov(); return }
         prihlasen = true
+        if slozky.isEmpty && !dotazanoNaSlozky {
+            dotazanoNaSlozky = true
+            vyberSlozky()
+        }
         if let v = try? await Synchronizace.spust(domov: domov, kopie: kopie, api: { HttpAirine(nastaveni: $0, token: t) }) {
             online = v.online
             prihlasen = !v.neprihlasen
@@ -77,6 +103,9 @@ struct AirineLista: App {
                 if stav.odmitnuto > 0 { Text("Odmítnutá hlášení: \(stav.odmitnuto)") }
                 if !stav.rozpory.isEmpty { Text("Rozpory: \(stav.rozpory.count)") }
                 Divider()
+                Text(stav.slozky.isEmpty ? "Airine zatím nebere z žádné složky"
+                     : "Airine bere z: " + stav.slozky.map { ($0 as NSString).abbreviatingWithTildeInPath }.joined(separator: ", "))
+                Button(stav.slozky.isEmpty ? "Vybrat složky…" : "Změnit složky…") { stav.vyberSlozky() }
                 Toggle("Posílat obsah souborů", isOn: Binding(get: { stav.posilatObsah }, set: { stav.nastavObsah($0) }))
                 Button("Synchronizovat teď") { Task { await stav.synchronizuj() } }
                 Button("Ukončit") { NSApplication.shared.terminate(nil) }

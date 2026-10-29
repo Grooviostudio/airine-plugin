@@ -8,6 +8,10 @@ a skills po změně nahlásí do katalogu Airine. Funguje i bez spojení.
 
 ## Co dělá a co ne
 
+- Hlásí jen soubory ve složkách, které si vybereš (dialog v liště nebo `airine slozky pridej
+  CESTA`). Dokud žádnou nevybereš, nehlásí nic. Pracovní kopie repozitářů (`.claude/worktrees`)
+  a skryté složky nehlásí nikdy, kromě míst se skills a pravidly agentů
+  ([docs/slozky.md](docs/slozky.md)).
 - Čte jen soubory, které agent právě upravil (`.md`, `.mdc`, do 1 MB), a jejich hlavičku.
 - Do Airine posílá hlavičku souboru (front matter: název, popis, typ, fakta), cestu na tomhle
   počítači, otisk (SHA-256), počet řádků a velikost, a název počítače.
@@ -42,7 +46,7 @@ a skills po změně nahlásí do katalogu Airine. Funguje i bez spojení.
 | Cesta | Co to je |
 |---|---|
 | `Sources/AirineCore` | Místní kopie (SQLite), fronta hlášení, synchronizace, hlavičky, doporučení, místní MCP |
-| `Sources/airine` | Příkaz `airine`: hooky, `sync`, `stav`, `propoj`, `vyres`, `obsah`, `vynech`, `nahraj-obsah`, `mcp` |
+| `Sources/airine` | Příkaz `airine`: hooky, `sync`, `stav`, `propoj`, `vyres`, `slozky`, `obsah`, `vynech`, `nahraj-obsah`, `mcp` |
 | `Sources/AirineLista` | Aplikace v liště (SwiftUI `MenuBarExtra`) |
 | `claude-plugin` | Plugin pro Claude Code: hooky SessionStart a PostToolUse, MCP server `airine mcp` |
 

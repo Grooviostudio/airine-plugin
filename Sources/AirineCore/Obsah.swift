@@ -112,6 +112,7 @@ public enum Obsah {
         public var jinaVerze = 0            // soubor je, ale obsah se od karty liší
         public var velke = 0                // prázdný nebo nad 1 MB
         public var vynechano = 0            // pod vzorem z `airine vynech`
+        public var mimoSlozky = 0           // mimo složky pro Znalosti
         public var jinyTyp = 0              // přípona, kterou server nebere
         public var tajne: [String] = []     // cesty, které vypadají na tajemství
         public var soubory: [String] = []   // cesty, jejichž obsah odešel (u zkoušky by odešel)
@@ -126,14 +127,16 @@ public enum Obsah {
     /// Archivované a cizí karty přeskočí. `zkouska` jen spočítá, nic neposílá.
     /// `pauza` mezi soubory šetří úložiště serveru (to při rychlé dávce vrací 429).
     public static func dohon(kopie: Kopie, api: AirineAPI, koreny: [URL] = [], vynechat: [String] = [],
-                             zkouska: Bool = false, pauza: Duration = .zero) async throws -> Dohnani {
+                             slozky: [String]? = nil, zkouska: Bool = false, pauza: Duration = .zero) async throws -> Dohnani {
         var v = Dohnani()
         let karty = try kopie.karty().filter { $0.smazano != true && $0.bez_prava != true && !$0.archivovana && $0.neniVAirine && $0.otisk != nil }
         for (i, k) in karty.enumerated() {
             if k.menit == false { v.bezPrava += 1; continue }
             let cesty = (k.mista ?? []).compactMap(\.cesta).flatMap { naDisku($0, koreny: koreny) }
-            let existuje = cesty.filter { FileManager.default.fileExists(atPath: $0) }
-            guard !existuje.isEmpty else { v.bezSouboru += 1; continue }
+            let naMacu = cesty.filter { FileManager.default.fileExists(atPath: $0) }
+            guard !naMacu.isEmpty else { v.bezSouboru += 1; continue }
+            let existuje = slozky.map { s in naMacu.filter { Slozky.duvod($0, s) == nil } } ?? naMacu
+            guard !existuje.isEmpty else { v.mimoSlozky += 1; continue }
             guard existuje.contains(where: { !vynechano($0, vynechat) }) else { v.vynechano += 1; continue }
             let vysledky = existuje.filter { !vynechano($0, vynechat) }.map { c in (c, zkontroluj(cesta: c, otisk: k.otisk!)) }
             guard let (cesta, obsah) = vysledky.lazy.compactMap({ c, r in (try? r.get()).map { (c, $0) } }).first,

@@ -37,13 +37,17 @@ public struct Nastaveni: Codable, Sendable {
     /// Složky a soubory, jejichž obsah nikdy neodejde, jen karta
     /// (`airine vynech`). Vzor bez „/“ na začátku sedí kdekoli v cestě.
     public var vynechatObsah: [String]
+    /// Složky pro Znalosti (`airine slozky`): hlásí se jen soubory v nich.
+    /// Prázdný seznam = plugin nehlásí nic, dokud člověk nevybere.
+    public var slozky: [String]
 
-    public init(server: String, zarizeni: String, nazevZarizeni: String, posilatObsah: Bool = true, vynechatObsah: [String] = []) {
+    public init(server: String, zarizeni: String, nazevZarizeni: String, posilatObsah: Bool = true,
+                vynechatObsah: [String] = [], slozky: [String] = []) {
         self.server = server; self.zarizeni = zarizeni; self.nazevZarizeni = nazevZarizeni
-        self.posilatObsah = posilatObsah; self.vynechatObsah = vynechatObsah
+        self.posilatObsah = posilatObsah; self.vynechatObsah = vynechatObsah; self.slozky = slozky
     }
 
-    enum CodingKeys: String, CodingKey { case server, zarizeni, nazevZarizeni, posilatObsah, vynechatObsah }
+    enum CodingKeys: String, CodingKey { case server, zarizeni, nazevZarizeni, posilatObsah, vynechatObsah, slozky }
 
     public init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
@@ -52,6 +56,7 @@ public struct Nastaveni: Codable, Sendable {
         nazevZarizeni = try c.decode(String.self, forKey: .nazevZarizeni)
         posilatObsah = try c.decodeIfPresent(Bool.self, forKey: .posilatObsah) ?? true
         vynechatObsah = try c.decodeIfPresent([String].self, forKey: .vynechatObsah) ?? []
+        slozky = try c.decodeIfPresent([String].self, forKey: .slozky) ?? []
     }
 
     public static func nacti(_ domov: Domov) throws -> Nastaveni {

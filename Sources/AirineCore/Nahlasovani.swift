@@ -6,8 +6,12 @@ public struct Nahlasovani: Sendable {
     let kopie: Kopie
     /// Posílat odkazy ze souboru. Vypnuto, dokud server pole `odkazy` nepřijímá.
     public var odkazy: Bool
+    /// Složky pro Znalosti (`Nastaveni.slozky`); `nil` = bez omezení.
+    public var slozky: [String]?
 
-    public init(kopie: Kopie, odkazy: Bool = false) { self.kopie = kopie; self.odkazy = odkazy }
+    public init(kopie: Kopie, odkazy: Bool = false, slozky: [String]? = nil) {
+        self.kopie = kopie; self.odkazy = odkazy; self.slozky = slozky
+    }
 
     /// Které soubory se hlásí: MD a skills. Ostatní hook tiše přeskočí.
     public static func hlasitelny(_ cesta: String) -> Bool {
@@ -63,6 +67,8 @@ public struct Nahlasovani: Sendable {
     @discardableResult
     public func nahlas(cesta: String, doplnId: Bool = true) throws -> Vysledek {
         guard Self.hlasitelny(cesta) else { return .preskoceno("není MD") }
+        // Mimo vybrané složky plugin soubor ani nečte: žádná karta, žádná rada agentovi.
+        if let slozky, let proc = Slozky.duvod(cesta, slozky) { return .preskoceno(proc) }
         let url = URL(fileURLWithPath: cesta).standardizedFileURL
         var data = try Data(contentsOf: url)
         guard data.count <= 1_048_576 else { return .preskoceno("nad 1 MB") }
