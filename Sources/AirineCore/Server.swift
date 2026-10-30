@@ -14,9 +14,41 @@ public protocol AirineAPI: Sendable {
     /// Místa, kde soubor na tomhle zařízení zmizel (POST /api/katalog/mista/zmizela).
     /// Karta zůstane. Vrací počet míst, která přestala platit.
     func zmizela(_ mista: [ZmizeleMisto]) async throws -> Int
+    /// Víc souborů s obsahem jedním požadavkem (POST /api/katalog/obsah-davka).
+    /// Výsledky jsou ve stejném pořadí. Server bez téhle cesty hází `jine(404, …)`,
+    /// příliš velká dávka `davkaVelka`: volající pak pošle soubory po jednom.
+    func nahrajDavku(_ soubory: [SouborDavky]) async throws -> [VysledekDavky]
+}
+
+/// Jeden soubor v dávce obsahu: hlášení karty a text, jehož SHA-256 je otisk.
+public struct SouborDavky: Sendable {
+    public var hlaseni: Hlaseni
+    public var mime: String
+    public var obsah: String
+    public init(hlaseni: Hlaseni, mime: String, obsah: String) { self.hlaseni = hlaseni; self.mime = mime; self.obsah = obsah }
+}
+
+/// Stav jednoho souboru z dávky. `ok`, `uz_prijato` a `rozpor` jsou jako
+/// u hlášení; `pretizeno` = poslat znovu po `retry_after` sekundách.
+public struct VysledekDavky: Codable, Sendable, Equatable {
+    public var id: String
+    public var stav: String
+    public var otisk: String?
+    public var rozpor: Bool?
+    public var ulozeny_otisk: String?
+    public var retry_after: Double?
+    public init(id: String, stav: String, otisk: String? = nil, retry_after: Double? = nil) {
+        self.id = id; self.stav = stav; self.otisk = otisk; self.retry_after = retry_after
+    }
+
+    /// Strop dávky (`obsah_davka`, `obsah_davka_bajtu` v GET /api/katalog/import).
+    public static let souboru = 50
+    public static let bajtu = 3_500_000
 }
 
 extension AirineAPI {
+    public func nahrajDavku(_ soubory: [SouborDavky]) async throws -> [VysledekDavky] { throw ChybaServeru.jine(404, "obsah-davka") }
+
     /// Server bez téhle cesty: zmizelá místa počkají ve frontě.
     public func zmizela(_ mista: [ZmizeleMisto]) async throws -> Int { throw ChybaServeru.jine(404, "zmizela") }
 }
@@ -31,6 +63,7 @@ public enum ChybaServeru: Error, Equatable {
     case ciziId                      // 409 cizi_id: uuid karty má jiný workspace
     case smazano                     // 410 u hlášení: karta je v Airine smazaná
     case obsahNeprosel(String)       // obsah se nenahrál; karta jde bez něj
+    case davkaVelka                  // 413 u dávky obsahu: soubory po jednom
     case jine(Int, String)
 }
 
@@ -171,6 +204,28 @@ public struct HttpAirine: AirineAPI {
             throw Self.chybaHlaseni(d2, k2)
         }
         return try JSONDecoder().decode(OdpovedHlaseni.self, from: d2)
+    }
+
+    public func nahrajDavku(_ soubory: [SouborDavky]) async throws -> [VysledekDavky] {
+        let polozky: [[String: Any]] = try soubory.map { f in
+            var p = (try JSONSerialization.jsonObject(with: JSONEncoder().encode(f.hlaseni)) as? [String: Any]) ?? [:]
+            p["mime"] = f.mime
+            p["obsah"] = f.obsah
+            return p
+        }
+        let telo = try JSONSerialization.data(withJSONObject: ["soubory": polozky])
+        var r = pozadavek("api/katalog/obsah-davka", metoda: "POST", telo: telo)
+        r.timeoutInterval = 60
+        let (data, kod) = try await posli(r)
+        switch kod {
+        case 200..<300:
+            let v = try JSONDecoder().decode([String: [VysledekDavky]].self, from: data)["vysledky"] ?? []
+            guard v.count == soubory.count else { throw Self.neocekavany(data, kod) }
+            return v
+        case 413: throw ChybaServeru.davkaVelka
+        case 403: throw ChybaServeru.neprihlasen
+        default: throw Self.chybaHlaseni(data, kod)
+        }
     }
 
     public func zmizela(_ mista: [ZmizeleMisto]) async throws -> Int {

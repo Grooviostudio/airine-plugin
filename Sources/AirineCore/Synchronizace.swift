@@ -59,46 +59,135 @@ public struct Synchronizace: Sendable {
     }
 
     func odesliFrontu(_ v: inout Vysledek) async throws {
-        for p in try kopie.fronta() {
-            do {
-                let o = try await odesli(p.hlaseni, &v)
-                // Server poznal týž soubor z jiného zařízení (import složky) a vrátil
-                // id existující karty: soubor bez id v hlavičce se dál hlásí pod ním.
-                if o.id != p.hlaseni.id { try kopie.prevezmi(p.hlaseni, id: o.id) }
-                // Kartu samotnou přinese až kanál změn, tady jen příznak rozporu.
-                if o.stav == .rozpor || o.rozpor == true {
-                    v.rozpory.append(p.hlaseni.id)
-                    try kopie.oznacRozpor(p.hlaseni.id, otisk: o.otisk)
+        let fronta = try kopie.fronta()
+        var i = 0
+        var poJednom = false        // server dávku nezná nebo ji odmítl celou
+        while i < fronta.count {
+            // Navazující hlášení s obsahem jdou jednou dávkou, do stropu serveru.
+            if !poJednom {
+                var davka: [(Kopie.Polozka, SouborDavky)] = []
+                var bajty = 0, j = i
+                while j < fronta.count, davka.count < VysledekDavky.souboru, let f = souborDavky(fronta[j].hlaseni),
+                      bajty + f.obsah.utf8.count + 4096 <= VysledekDavky.bajtu {
+                    davka.append((fronta[j], f)); bajty += f.obsah.utf8.count + 4096; j += 1
                 }
-                if !(o.hlavicka ?? []).isEmpty { v.nesoulad.append(p.hlaseni.id) }
-                try kopie.odeslano(p.hlaseni)
-                v.odeslano += 1
-            } catch ChybaServeru.odmitnuto(let o) {
-                try kopie.odmitnuto(p.hlaseni, o)
-                v.odmitnuto += 1
-            } catch ChybaServeru.bezPravaKarty {
-                try kopie.odmitnuto(p.hlaseni, Odmitnuti(chyby: [ChybaPole(
-                    pole: "prava", zprava: "Tuhle kartu nesmíš měnit. Požádej vlastníka o právo, nebo ulož změnu jako nový soubor.", kod: "bez_prava")]))
-                v.odmitnuto += 1
-            } catch ChybaServeru.ciziId {
-                try kopie.odmitnuto(p.hlaseni, Odmitnuti(chyby: [ChybaPole(
-                    pole: "id", zprava: "Toto id už v Airine patří jinému workspace. Smaž z hlavičky airine.id (u SKILL.md metadata.airine-id) a ulož, plugin doplní nové.", kod: "cizi_id")]))
-                v.odmitnuto += 1
-            } catch ChybaServeru.smazano {
-                try kopie.oznacSmazanou(p.hlaseni)
-                v.smazanych += 1
-            } catch ChybaServeru.ciziZarizeni {
-                v.ciziZarizeni = true
-                return
-            } catch ChybaServeru.bezSpojeni {
-                try kopie.pokusSelhal(p.hlaseni)
-                v.online = false
-                return                                   // zbytek fronty počká, pořadí zůstane
-            } catch ChybaServeru.neprihlasen {
-                v.neprihlasen = true
-                return
+                if davka.count > 1 {
+                    switch try await posliDavku(davka, &v) {
+                    case .hotovo: i = j; continue
+                    case .konec: return
+                    case .poJednom: poJednom = true
+                    }
+                }
             }
+            guard try await odesliJedno(fronta[i], &v) else { return }
+            i += 1
         }
+    }
+
+    /// Hlášení s obsahem do dávky: jen text v UTF-8, který sedí s otiskem.
+    func souborDavky(_ h: Hlaseni) -> SouborDavky? {
+        guard obsah, let cesta = h.cesta, !Obsah.vynechano(cesta, vynechat),
+              let o = Obsah.nacti(cesta: cesta, otisk: h.otisk),
+              let text = String(data: o.data, encoding: .utf8) else { return nil }
+        return SouborDavky(hlaseni: h, mime: o.mime, obsah: text)
+    }
+
+    enum KonecDavky { case hotovo, konec, poJednom }
+
+    /// Jedna dávka obsahu. Přetížené soubory pošle znovu po `retry_after`
+    /// (nejvýš dvakrát), soubory odmítnuté bez podrobností po jednom.
+    func posliDavku(_ davka: [(Kopie.Polozka, SouborDavky)], _ v: inout Vysledek) async throws -> KonecDavky {
+        var zbyva = davka, kolo = 0
+        var jednotlive: [Kopie.Polozka] = []
+        while !zbyva.isEmpty {
+            let vysledky: [VysledekDavky]
+            do { vysledky = try await api.nahrajDavku(zbyva.map(\.1)) }
+            catch ChybaServeru.bezSpojeni {
+                try kopie.pokusSelhal(zbyva[0].0.hlaseni); v.online = false; return .konec
+            } catch ChybaServeru.neprihlasen { v.neprihlasen = true; return .konec }
+            catch ChybaServeru.ciziZarizeni { v.ciziZarizeni = true; return .konec }
+            catch is ChybaServeru { return .poJednom }      // 404, 413, cokoli celé dávky
+            var pretizene: [(Kopie.Polozka, SouborDavky)] = []
+            var cekat = 0.0
+            for (polozka, r) in zip(zbyva, vysledky) {
+                let p = polozka.0
+                switch r.stav {
+                case "ok", "uz_prijato", "rozpor":
+                    var o = OdpovedHlaseni(stav: StavHlaseni(rawValue: r.stav)!, id: r.id, otisk: r.otisk, rozpor: r.rozpor)
+                    o.ulozeny_otisk = r.ulozeny_otisk
+                    v.obsahu += 1
+                    try vyrid(p, o, &v)
+                case "pretizeno":
+                    pretizene.append(polozka); cekat = max(cekat, r.retry_after ?? 2)
+                case "smazano": _ = try vyridChybu(p, .smazano, &v)
+                case "bez_prava": _ = try vyridChybu(p, .bezPravaKarty, &v)
+                default: jednotlive.append(p)           // neplatne: podrobnosti řekne hlášení po jednom
+                }
+            }
+            if pretizene.isEmpty { break }
+            kolo += 1
+            guard kolo <= 2 else { return .konec }      // počkají ve frontě do příště
+            try await Task.sleep(for: .seconds(min(cekat, HttpAirine.nejdeleCekat)))
+            zbyva = pretizene
+        }
+        for p in jednotlive { guard try await odesliJedno(p, &v) else { return .konec } }
+        return .hotovo
+    }
+
+    /// `false` = zbytek fronty počká (výpadek, odhlášení, cizí zařízení).
+    func odesliJedno(_ p: Kopie.Polozka, _ v: inout Vysledek) async throws -> Bool {
+        do {
+            try vyrid(p, try await odesli(p.hlaseni, &v), &v)
+            return true
+        } catch let e as ChybaServeru {
+            return try vyridChybu(p, e, &v)
+        }
+    }
+
+    func vyrid(_ p: Kopie.Polozka, _ o: OdpovedHlaseni, _ v: inout Vysledek) throws {
+        // Server poznal týž soubor z jiného zařízení (import složky) a vrátil
+        // id existující karty: soubor bez id v hlavičce se dál hlásí pod ním.
+        if o.id != p.hlaseni.id { try kopie.prevezmi(p.hlaseni, id: o.id) }
+        // Kartu samotnou přinese až kanál změn, tady jen příznak rozporu.
+        if o.stav == .rozpor || o.rozpor == true {
+            v.rozpory.append(p.hlaseni.id)
+            try kopie.oznacRozpor(p.hlaseni.id, otisk: o.otisk)
+        }
+        if !(o.hlavicka ?? []).isEmpty { v.nesoulad.append(p.hlaseni.id) }
+        try kopie.odeslano(p.hlaseni)
+        v.odeslano += 1
+    }
+
+    func vyridChybu(_ p: Kopie.Polozka, _ e: ChybaServeru, _ v: inout Vysledek) throws -> Bool {
+        switch e {
+        case .odmitnuto(let o):
+            try kopie.odmitnuto(p.hlaseni, o)
+            v.odmitnuto += 1
+        case .bezPravaKarty:
+            try kopie.odmitnuto(p.hlaseni, Odmitnuti(chyby: [ChybaPole(
+                pole: "prava", zprava: "Tuhle kartu nesmíš měnit. Požádej vlastníka o právo, nebo ulož změnu jako nový soubor.", kod: "bez_prava")]))
+            v.odmitnuto += 1
+        case .ciziId:
+            try kopie.odmitnuto(p.hlaseni, Odmitnuti(chyby: [ChybaPole(
+                pole: "id", zprava: "Toto id už v Airine patří jinému workspace. Smaž z hlavičky airine.id (u SKILL.md metadata.airine-id) a ulož, plugin doplní nové.", kod: "cizi_id")]))
+            v.odmitnuto += 1
+        case .smazano:
+            try kopie.oznacSmazanou(p.hlaseni)
+            v.smazanych += 1
+        case .ciziZarizeni:
+            v.ciziZarizeni = true
+            return false
+        case .bezSpojeni:
+            try kopie.pokusSelhal(p.hlaseni)
+            v.online = false
+            return false                                 // zbytek fronty počká, pořadí zůstane
+        case .neprihlasen:
+            v.neprihlasen = true
+            return false
+        default:
+            throw e
+        }
+        return true
     }
 
     /// Zmizelá místa po dávkách. Server bez téhle cesty (404) nebo výpadek:

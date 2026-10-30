@@ -89,7 +89,30 @@ actor MockServer: AirineAPI {
     func maObsah(_ id: String) -> Bool { obsah.keys.contains { $0.hasPrefix(id + ":") } }
 
     func nahrajObsah(_ h: Hlaseni, data: Data, mime: String) async throws -> OdpovedHlaseni {
-        try await nahrajObsah(h, data: data, mime: mime, zarizeni: nil)
+        jednotliveObsahu += 1
+        return try await nahrajObsah(h, data: data, mime: mime, zarizeni: nil)
+    }
+
+    /// `/obsah-davka`: vypnutá = server ji nemá (404). `pretizit` = jména souborů,
+    /// které dostanou poprvé `pretizeno`; `neplatne` = jména odmítnutá v dávce.
+    var davky: [[String]]? = nil
+    var pretizit: Set<String> = []
+    var neplatneVDavce: Set<String> = []
+    var jednotliveObsahu = 0
+    func zapniDavky(pretizit: Set<String> = [], neplatne: Set<String> = []) { davky = []; self.pretizit = pretizit; neplatneVDavce = neplatne }
+    func nahrajDavku(_ soubory: [SouborDavky]) async throws -> [VysledekDavky] {
+        guard online else { throw ChybaServeru.bezSpojeni }
+        guard davky != nil else { throw ChybaServeru.jine(404, "") }
+        davky!.append(soubory.map { $0.hlaseni.name ?? "" })
+        var v: [VysledekDavky] = []
+        for f in soubory {
+            let jmeno = f.hlaseni.name ?? ""
+            if pretizit.remove(jmeno) != nil { v.append(VysledekDavky(id: f.hlaseni.id, stav: "pretizeno", retry_after: 0)); continue }
+            if neplatneVDavce.contains(jmeno) { v.append(VysledekDavky(id: f.hlaseni.id, stav: "neplatne")); continue }
+            let o = try await nahrajObsah(f.hlaseni, data: Data(f.obsah.utf8), mime: f.mime, zarizeni: nil)
+            v.append(VysledekDavky(id: o.id, stav: o.stav.rawValue, otisk: o.otisk))
+        }
+        return v
     }
 
     func nahrajObsah(_ h: Hlaseni, data: Data, mime: String, zarizeni: String?) async throws -> OdpovedHlaseni {
@@ -977,6 +1000,21 @@ final class Podstrceny: URLProtocol, @unchecked Sendable {
         #expect(Podstrceny.pozadavky.count == 1)
     }
 
+    @Test func davkaPosilaObsahA413JeDavkaVelka() async throws {
+        Podstrceny.pozadavky = []; Podstrceny.tela = []
+        Podstrceny.odpoved = { _ in (200, #"{"vysledky":[{"id":"k1","stav":"ok","otisk":"o"}]}"#) }
+        let v = try await api().nahrajDavku([SouborDavky(hlaseni: h, mime: "text/markdown", obsah: "A\n")])
+        #expect(v == [VysledekDavky(id: "k1", stav: "ok", otisk: "o")])
+        #expect(Podstrceny.pozadavky.first?.url?.path == "/api/katalog/obsah-davka")
+        let telo = try #require(try JSONSerialization.jsonObject(with: Podstrceny.tela[0]) as? [String: Any])
+        let f = try #require((telo["soubory"] as? [[String: Any]])?.first)
+        #expect(f["obsah"] as? String == "A\n" && f["mime"] as? String == "text/markdown" && f["otisk"] as? String == h.otisk && f["name"] as? String == "brief")
+        Podstrceny.odpoved = { _ in (413, "{}") }
+        await #expect(throws: ChybaServeru.davkaVelka) {
+            try await api().nahrajDavku([SouborDavky(hlaseni: h, mime: "text/markdown", obsah: "A\n")])
+        }
+    }
+
     @Test func uzNahranoPreskociPutAKvotaJeObsahNeprosel() async throws {
         Podstrceny.pozadavky = []; Podstrceny.tela = []
         Podstrceny.odpoved = { r in
@@ -1211,5 +1249,30 @@ final class PocitaneTajemstvi: UlozisteTajemstvi, @unchecked Sendable {
     @Test func vychoziJeJednoNaProces() throws {
         let d = try docasnyDomov()
         #expect(Tajemstvi.vychozi(d) === Tajemstvi.vychozi(d))
+    }
+}
+
+@Suite struct DavkaTests {
+    @Test func obsahJdeDavkouSPretizenimANeplatnym() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        await server.zapniDavky(pretizit: ["b"], neplatne: ["c"])
+        for j in ["a", "b", "c", "d"] {
+            let c = try soubor(d, "\(j).md", "---\nname: \(j)\ndescription: D\nairine:\n  typ: brief\n---\nText \(j)\n")
+            _ = try Nahlasovani(kopie: k).nahlas(cesta: c)
+        }
+        let v = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(v.odeslano == 4 && v.obsahu == 4 && v.online)
+        #expect(try k.fronta().isEmpty)
+        #expect(await server.davky == [["a", "b", "c", "d"], ["b"]], "přetížený soubor jde znovu sám")
+        #expect(await server.jednotliveObsahu == 1, "odmítnutý v dávce jde po jednom")
+        for id in try k.karty().map(\.id) { #expect(await server.maObsah(id)) }
+    }
+
+    @Test func bezDavkyPoJednom() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        for j in ["a", "b"] { _ = try Nahlasovani(kopie: k).nahlas(cesta: try soubor(d, "\(j).md", "Text \(j)\n")) }
+        let v = try await Synchronizace(kopie: k, api: server).probehni()
+        let jednotlive = await server.jednotliveObsahu
+        #expect(v.odeslano == 2 && v.obsahu == 2 && jednotlive == 2)
     }
 }
