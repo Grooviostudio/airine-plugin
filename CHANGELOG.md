@@ -10,6 +10,10 @@
   token přečte znovu jen po 401. macOS se tak u ad hoc podepsané lišty neptá každou minutu.
 - Na 503 s `Retry-After` (přetížené úložiště) plugin počká, nejdéle 30 s, a zkusí to až
   dvakrát znovu. Pak hlášení zůstane ve frontě do příští synchronizace.
+- **`airine nahraj-obsah` po dávkách.** Stejná cesta jako fronta (`obsah-davka`), stejné
+  zacházení se stavy; `--pauza` je teď mezi dávkami. Stropy dávky (`obsah_davka`,
+  `obsah_davka_bajtu`) plugin bere z GET /api/katalog/import spolu s přeskakovanými
+  složkami, výchozí 50 souborů a 3,5 MB.
 - **Přeskakované složky ze serveru.** Seznam knihoven a sestavení a povolená skrytá
   místa plugin bere z GET /api/katalog/import (jednou za 6 hodin, uloží do kopie).
   Bez spojení nebo se starým serverem platí vestavěný seznam.

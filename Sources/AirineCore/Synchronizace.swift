@@ -62,27 +62,28 @@ public struct Synchronizace: Sendable {
     /// Jak často se ptát serveru na přeskakované složky.
     static let pravidlaPo: TimeInterval = 6 * 3600
 
-    /// Přeskakované složky ze serveru, nejvýš jednou za 6 hodin. Selhání nevadí:
-    /// platí poslední uložená, jinak vestavěná.
+    /// Přeskakované složky a stropy dávky ze serveru, nejvýš jednou za 6 hodin.
+    /// Selhání nevadí: platí poslední uložené, jinak vestavěné.
     func obnovPravidla() async throws {
         if let kdy = try kopie.stav("pravidla_slozek_kdy", Date.self), Date().timeIntervalSince(kdy) < Self.pravidlaPo { return }
-        guard let p = try? await api.pravidlaSlozek() else { return }
+        guard let n = try? await api.nastaveniImportu(), n.pravidla != nil || n.stropy != nil else { return }
         try kopie.nastavStav("pravidla_slozek_kdy", Date())
-        try kopie.nastavStav("pravidla_slozek", p)
-        Slozky.pouzij(p)
+        if let p = n.pravidla { try kopie.nastavStav("pravidla_slozek", p); Slozky.pouzij(p) }
+        if let s = n.stropy { try kopie.nastavStav("stropy_davky", s) }
     }
 
     func odesliFrontu(_ v: inout Vysledek) async throws {
         let fronta = try kopie.fronta()
         var i = 0
         var poJednom = false        // server dávku nezná nebo ji odmítl celou
+        let strop = kopie.stropyDavky()
         while i < fronta.count {
             // Navazující hlášení s obsahem jdou jednou dávkou, do stropu serveru.
             if !poJednom {
                 var davka: [(Kopie.Polozka, SouborDavky)] = []
                 var bajty = 0, j = i
-                while j < fronta.count, davka.count < VysledekDavky.souboru, let f = souborDavky(fronta[j].hlaseni),
-                      bajty + f.obsah.utf8.count + 4096 <= VysledekDavky.bajtu {
+                while j < fronta.count, davka.count < strop.souboru, let f = souborDavky(fronta[j].hlaseni),
+                      bajty + f.obsah.utf8.count + 4096 <= strop.bajtu {
                     davka.append((fronta[j], f)); bajty += f.obsah.utf8.count + 4096; j += 1
                 }
                 if davka.count > 1 {

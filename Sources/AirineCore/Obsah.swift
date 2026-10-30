@@ -130,6 +130,77 @@ public enum Obsah {
                              slozky: [String]? = nil, zkouska: Bool = false, pauza: Duration = .zero) async throws -> Dohnani {
         var v = Dohnani()
         let karty = try kopie.karty().filter { $0.smazano != true && $0.bez_prava != true && !$0.archivovana && $0.neniVAirine && $0.otisk != nil }
+        // Soubory jdou po dávkách (POST /api/katalog/obsah-davka) do stropu serveru.
+        // Server bez dávek, odmítnutá dávka nebo soubor, který není UTF-8: po jednom.
+        let strop = kopie.stropyDavky()
+        var davka: [Kandidat] = [], bajty = 0, poJednom = false
+
+        func ulozeno(_ c: Kandidat) throws {
+            v.nahrano += 1
+            v.soubory.append(c.cesta)
+            var ulozena = c.karta
+            ulozena.ulozeny_otisk = c.karta.otisk
+            try kopie.ulozKarty([ulozena])
+        }
+        /// Jeden soubor po staru. `true` = konec (výpadek, odhlášení).
+        func jednotlive(_ c: Kandidat, zbyva: Int) async throws -> Bool {
+            do {
+                _ = try await api.nahrajObsah(c.hlaseni, data: c.data, mime: c.mime)
+                try ulozeno(c)
+                if pauza > .zero { try await Task.sleep(for: pauza) }
+            } catch ChybaServeru.bezPravaKarty {
+                v.bezPrava += 1
+            } catch ChybaServeru.bezSpojeni {
+                v.online = false; v.zbyva = zbyva; return true
+            } catch ChybaServeru.neprihlasen {
+                v.neprihlasen = true; v.zbyva = zbyva; return true
+            } catch {
+                v.chyby.append(c.karta.id)
+            }
+            return false
+        }
+        /// Odešle nasbíranou dávku. Přetížené soubory zkusí znovu po `retry_after`
+        /// (nejvýš dvakrát), odmítnuté bez podrobností pošle po jednom.
+        func odesli(zbyvaKaret: Int) async throws -> Bool {
+            var zbyva = davka, kolo = 0
+            davka = []; bajty = 0
+            while !zbyva.isEmpty {
+                let vysledky: [VysledekDavky]
+                do {
+                    vysledky = try await api.nahrajDavku(zbyva.map {
+                        SouborDavky(hlaseni: $0.hlaseni, mime: $0.mime, obsah: String(decoding: $0.data, as: UTF8.self))
+                    })
+                } catch ChybaServeru.bezSpojeni {
+                    v.online = false; v.zbyva = zbyvaKaret + zbyva.count; return true
+                } catch ChybaServeru.neprihlasen {
+                    v.neprihlasen = true; v.zbyva = zbyvaKaret + zbyva.count; return true
+                } catch is ChybaServeru {              // 404, 413: dál po jednom
+                    poJednom = true
+                    for (j, c) in zbyva.enumerated() where try await jednotlive(c, zbyva: zbyvaKaret + zbyva.count - j) { return true }
+                    return false
+                }
+                var pretizene: [Kandidat] = [], znovu: [Kandidat] = []
+                var cekat = 0.0
+                for (c, r) in zip(zbyva, vysledky) {
+                    switch r.stav {
+                    case "ok", "uz_prijato", "rozpor": try ulozeno(c)
+                    case "pretizeno": pretizene.append(c); cekat = max(cekat, r.retry_after ?? 2)
+                    case "bez_prava": v.bezPrava += 1
+                    case "smazano": v.chyby.append(c.karta.id)
+                    default: znovu.append(c)             // neplatne, chyba, neznámý stav
+                    }
+                }
+                for (j, c) in znovu.enumerated() where try await jednotlive(c, zbyva: zbyvaKaret + pretizene.count + znovu.count - j) { return true }
+                if pretizene.isEmpty { break }
+                kolo += 1
+                guard kolo <= 2 else { v.online = false; v.zbyva = zbyvaKaret + pretizene.count; return true }
+                try await Task.sleep(for: .seconds(min(cekat, HttpAirine.nejdeleCekat)))
+                zbyva = pretizene
+            }
+            if pauza > .zero { try await Task.sleep(for: pauza) }
+            return false
+        }
+
         for (i, k) in karty.enumerated() {
             if k.menit == false { v.bezPrava += 1; continue }
             let cesty = (k.mista ?? []).compactMap(\.cesta).flatMap { naDisku($0, koreny: koreny) }
@@ -156,24 +227,26 @@ public enum Obsah {
                 continue
             }
             if zkouska { v.nahrano += 1; v.soubory.append(cesta); continue }
-            do {
-                _ = try await api.nahrajObsah(h, data: obsah.data, mime: obsah.mime)
-                v.nahrano += 1
-                v.soubory.append(cesta)
-                if pauza > .zero { try await Task.sleep(for: pauza) }
-                var ulozena = k
-                ulozena.ulozeny_otisk = k.otisk
-                try kopie.ulozKarty([ulozena])
-            } catch ChybaServeru.bezPravaKarty {
-                v.bezPrava += 1
-            } catch ChybaServeru.bezSpojeni {
-                v.online = false; v.zbyva = karty.count - i; return v
-            } catch ChybaServeru.neprihlasen {
-                v.neprihlasen = true; v.zbyva = karty.count - i; return v
-            } catch {
-                v.chyby.append(k.id)
+            let c = Kandidat(karta: k, cesta: cesta, hlaseni: h, data: obsah.data, mime: obsah.mime)
+            guard !poJednom, String(data: c.data, encoding: .utf8) != nil else {
+                if try await jednotlive(c, zbyva: karty.count - i + davka.count) { return v }
+                continue
             }
+            if !davka.isEmpty && (davka.count >= strop.souboru || bajty + c.data.count + 4096 > strop.bajtu) {
+                if try await odesli(zbyvaKaret: karty.count - i) { return v }
+            }
+            davka.append(c); bajty += c.data.count + 4096
         }
+        if !davka.isEmpty, try await odesli(zbyvaKaret: 0) { return v }
         return v
+    }
+
+    /// Soubor připravený k odeslání: karta, cesta na disku a bajty té verze.
+    struct Kandidat {
+        var karta: Karta
+        var cesta: String
+        var hlaseni: Hlaseni
+        var data: Data
+        var mime: String
     }
 }

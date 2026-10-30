@@ -88,6 +88,9 @@ public final class Kopie: @unchecked Sendable {
 
     /// Které složky patří ke kterému projektu (`airine propoj`). Podle toho
     /// pozná začátek session, ke kterému projektu dát doporučení.
+    /// Strop dávky obsahu z poslední synchronizace, jinak výchozí.
+    public func stropyDavky() -> StropyDavky { ((try? stav("stropy_davky", StropyDavky.self)) ?? nil) ?? .vychozi }
+
     public func slozky() throws -> [String: String] { try stav("slozky", [String: String].self) ?? [:] }
 
     public func propoj(slozka: String, projekt: String) throws {

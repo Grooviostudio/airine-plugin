@@ -104,9 +104,10 @@ actor MockServer: AirineAPI {
     func zapniDavky(pretizit: Set<String> = [], neplatne: Set<String> = [], chyba: Set<String> = []) {
         davky = []; self.pretizit = pretizit; neplatneVDavce = neplatne; chybaVDavce = chyba
     }
-    var pravidla: PravidlaSlozek? = nil
-    func nastavPravidla(_ p: PravidlaSlozek?) { pravidla = p }
-    func pravidlaSlozek() async throws -> PravidlaSlozek? { pravidla }
+    var nastaveni = NastaveniImportu()
+    func nastavPravidla(_ p: PravidlaSlozek?) { nastaveni.pravidla = p }
+    func nastavStropy(_ s: StropyDavky?) { nastaveni.stropy = s }
+    func nastaveniImportu() async throws -> NastaveniImportu { nastaveni }
     func nahrajDavku(_ soubory: [SouborDavky]) async throws -> [VysledekDavky] {
         guard online else { throw ChybaServeru.bezSpojeni }
         guard davky != nil else { throw ChybaServeru.jine(404, "") }
@@ -117,8 +118,11 @@ actor MockServer: AirineAPI {
             if pretizit.remove(jmeno) != nil { v.append(VysledekDavky(id: f.hlaseni.id, stav: "pretizeno", retry_after: 0)); continue }
             if neplatneVDavce.contains(jmeno) { v.append(VysledekDavky(id: f.hlaseni.id, stav: "neplatne")); continue }
             if chybaVDavce.contains(jmeno) { v.append(VysledekDavky(id: f.hlaseni.id, stav: "chyba")); continue }
-            let o = try await nahrajObsah(f.hlaseni, data: Data(f.obsah.utf8), mime: f.mime, zarizeni: nil)
-            v.append(VysledekDavky(id: o.id, stav: o.stav.rawValue, otisk: o.otisk))
+            do {
+                let o = try await nahrajObsah(f.hlaseni, data: Data(f.obsah.utf8), mime: f.mime, zarizeni: nil)
+                v.append(VysledekDavky(id: o.id, stav: o.stav.rawValue, otisk: o.otisk))
+            } catch ChybaServeru.bezPravaKarty { v.append(VysledekDavky(id: f.hlaseni.id, stav: "bez_prava")) }
+            catch { v.append(VysledekDavky(id: f.hlaseni.id, stav: "neplatne")) }
         }
         return v
     }
@@ -824,6 +828,40 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
         _ = try await Synchronizace(kopie: k, api: server).probehni()
         let znovu = try await Obsah.dohon(kopie: k, api: server, koreny: [koren])
         #expect(znovu.nahrano == 0)
+    }
+
+    @Test func dohnaniJdePoDavkachDoStropu() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        for j in ["a", "b", "c", "e", "f"] {
+            let c = try soubor(d, "\(j).md", "\(j)\n")
+            var karta = Karta(id: j, name: j, popis: j, typ: "brief", otisk: Otisk.sha256(Data("\(j)\n".utf8)), mista: [Misto(cesta: c)])
+            karta.menit = true
+            await server.pridej(karta)
+        }
+        _ = try await Synchronizace(kopie: k, api: server).probehni()
+        try k.nastavStav("stropy_davky", StropyDavky(souboru: 2, bajtu: 3_500_000))
+        await server.zapniDavky(pretizit: ["b"], chyba: ["c"])
+        let v = try await Obsah.dohon(kopie: k, api: server)
+        #expect(v.nahrano == 5 && v.chyby.isEmpty && v.online)
+        let davky = try #require(await server.davky)     // pořadí karet v kopii není dané
+        #expect(davky.count == 4 && davky.allSatisfy { $0.count <= 2 }, "po dvou")
+        #expect(davky.flatMap { $0 }.sorted() == ["a", "b", "b", "c", "e", "f"], "přetížený znovu sám")
+        #expect(davky.contains(["b"]))
+        #expect(await server.jednotliveObsahu == 1, "chyba jde ještě jednou po jednom")
+        for j in ["a", "b", "c", "e", "f"] { #expect(try k.karta(j)?.ulozeny_otisk != nil) }
+        _ = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(try await Obsah.dohon(kopie: k, api: server).nahrano == 0)
+    }
+
+    @Test func stropyDavkyZeServeru() async throws {
+        #expect(StropyDavky.zeServeru(["obsah_davka": 50, "obsah_davka_bajtu": 3_500_000]) == .vychozi)
+        #expect(StropyDavky.zeServeru([:]) == nil)
+        #expect(StropyDavky.zeServeru(["obsah_davka": 1, "obsah_davka_bajtu": 3_500_000]) == nil)
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        #expect(k.stropyDavky() == .vychozi)
+        await server.nastavStropy(StropyDavky(souboru: 20, bajtu: 1_000_000))
+        _ = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(k.stropyDavky() == StropyDavky(souboru: 20, bajtu: 1_000_000))
     }
 
     @Test func dohnaniPreskociCiziKartyAVypadek() async throws {

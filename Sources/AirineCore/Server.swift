@@ -18,8 +18,8 @@ public protocol AirineAPI: Sendable {
     /// Výsledky jsou ve stejném pořadí. Server bez téhle cesty hází `jine(404, …)`,
     /// příliš velká dávka `davkaVelka`: volající pak pošle soubory po jednom.
     func nahrajDavku(_ soubory: [SouborDavky]) async throws -> [VysledekDavky]
-    /// Přeskakované složky z GET /api/katalog/import; `nil` = server je neposílá.
-    func pravidlaSlozek() async throws -> PravidlaSlozek?
+    /// Přeskakované složky a stropy dávky z GET /api/katalog/import.
+    func nastaveniImportu() async throws -> NastaveniImportu
 }
 
 /// Jeden soubor v dávce obsahu: hlášení karty a text, jehož SHA-256 je otisk.
@@ -42,16 +42,34 @@ public struct VysledekDavky: Codable, Sendable, Equatable {
     public init(id: String, stav: String, otisk: String? = nil, retry_after: Double? = nil) {
         self.id = id; self.stav = stav; self.otisk = otisk; self.retry_after = retry_after
     }
+}
 
-    /// Strop dávky (`obsah_davka`, `obsah_davka_bajtu` v GET /api/katalog/import).
-    public static let souboru = 50
-    public static let bajtu = 3_500_000
+/// Strop dávky obsahu (`obsah_davka`, `obsah_davka_bajtu` v GET /api/katalog/import).
+public struct StropyDavky: Codable, Sendable, Equatable {
+    public var souboru: Int
+    public var bajtu: Int
+    public init(souboru: Int, bajtu: Int) { self.souboru = souboru; self.bajtu = bajtu }
+    public static let vychozi = StropyDavky(souboru: 50, bajtu: 3_500_000)
+
+    /// Z odpovědi serveru, jen v rozumných mezích; jinak `nil` a platí dosavadní.
+    public static func zeServeru(_ json: [String: Any]) -> StropyDavky? {
+        guard let s = json["obsah_davka"] as? Int, let b = json["obsah_davka_bajtu"] as? Int,
+              (2...500).contains(s), (65_536...50_000_000).contains(b) else { return nil }
+        return StropyDavky(souboru: s, bajtu: b)
+    }
+}
+
+/// Co plugin bere z GET /api/katalog/import. Co server nepošle, je `nil`.
+public struct NastaveniImportu: Sendable, Equatable {
+    public var pravidla: PravidlaSlozek?
+    public var stropy: StropyDavky?
+    public init(pravidla: PravidlaSlozek? = nil, stropy: StropyDavky? = nil) { self.pravidla = pravidla; self.stropy = stropy }
 }
 
 extension AirineAPI {
     public func nahrajDavku(_ soubory: [SouborDavky]) async throws -> [VysledekDavky] { throw ChybaServeru.jine(404, "obsah-davka") }
 
-    public func pravidlaSlozek() async throws -> PravidlaSlozek? { nil }
+    public func nastaveniImportu() async throws -> NastaveniImportu { NastaveniImportu() }
 
     /// Server bez téhle cesty: zmizelá místa počkají ve frontě.
     public func zmizela(_ mista: [ZmizeleMisto]) async throws -> Int { throw ChybaServeru.jine(404, "zmizela") }
@@ -232,10 +250,11 @@ public struct HttpAirine: AirineAPI {
         }
     }
 
-    public func pravidlaSlozek() async throws -> PravidlaSlozek? {
+    public func nastaveniImportu() async throws -> NastaveniImportu {
         let (data, kod) = try await posli(pozadavek("api/katalog/import"))
         guard (200..<300).contains(kod) else { throw Self.neocekavany(data, kod) }
-        return ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any]).flatMap(PravidlaSlozek.zeServeru)
+        let json = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any]) ?? [:]
+        return NastaveniImportu(pravidla: PravidlaSlozek.zeServeru(json), stropy: StropyDavky.zeServeru(json))
     }
 
     public func zmizela(_ mista: [ZmizeleMisto]) async throws -> Int {

@@ -26,7 +26,9 @@ a skills po změně nahlásí do katalogu Airine. Funguje i bez spojení.
 - `airine nahraj-obsah [--koren CESTA]… [--vynech VZOR]… [--pauza MS] [--zkouska] [--vypis]` dožene obsah karet, které ho
   v Airine ještě nemají (třeba z dřívějšího importu). Posílá jen soubory, jejichž otisk sedí
   s kartou, popis ani vazby karty nemění. Relativní cesty z importu hledá pod `--koren` a z něj
-  nevyjde. Vypíše rozpad podle přípony, soubory s tajemstvím a s `--vypis` i seznam souborů.
+  nevyjde. Posílá po dávkách do stropu serveru (`--pauza` je mezi dávkami, výchozí 500 ms);
+  server bez dávek nebo soubor, který není UTF-8, jde po jednom. Vypíše rozpad podle
+  přípony, soubory s tajemstvím a s `--vypis` i seznam souborů.
 - Místní kopie katalogu je v `~/Library/Application Support/Airine`, každý řádek
   šifrovaný (AES-GCM). Klíč i osobní token jsou v Klíčence.
 - Lišta sama hlídá vybrané složky (FSEvents, žádné procházení disku): změna souboru je
