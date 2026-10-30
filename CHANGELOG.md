@@ -12,7 +12,7 @@
   dvakrát znovu. Pak hlášení zůstane ve frontě do příští synchronizace.
 - **Obsah po dávkách.** Fronta posílá soubory s obsahem po 50 (do 3,5 MB) jedním požadavkem
   `POST /api/katalog/obsah-davka`. Přetížené soubory pošle znovu po `retry_after`, odmítnuté
-  po jednom kvůli podrobnostem. Server bez dávek nebo 413: po jednom jako dřív.
+  (`neplatne`), se stavem `chyba` nebo neznámým stavem ještě jednou po jednom. Server bez dávek nebo 413: po jednom jako dřív.
 
 ## 29. 10. 2026
 

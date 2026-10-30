@@ -94,12 +94,16 @@ actor MockServer: AirineAPI {
     }
 
     /// `/obsah-davka`: vypnutá = server ji nemá (404). `pretizit` = jména souborů,
-    /// které dostanou poprvé `pretizeno`; `neplatne` = jména odmítnutá v dávce.
+    /// které dostanou poprvé `pretizeno`; `neplatne` / `chyba` = jména, která
+    /// v dávce dostanou ten stav.
     var davky: [[String]]? = nil
     var pretizit: Set<String> = []
     var neplatneVDavce: Set<String> = []
+    var chybaVDavce: Set<String> = []
     var jednotliveObsahu = 0
-    func zapniDavky(pretizit: Set<String> = [], neplatne: Set<String> = []) { davky = []; self.pretizit = pretizit; neplatneVDavce = neplatne }
+    func zapniDavky(pretizit: Set<String> = [], neplatne: Set<String> = [], chyba: Set<String> = []) {
+        davky = []; self.pretizit = pretizit; neplatneVDavce = neplatne; chybaVDavce = chyba
+    }
     func nahrajDavku(_ soubory: [SouborDavky]) async throws -> [VysledekDavky] {
         guard online else { throw ChybaServeru.bezSpojeni }
         guard davky != nil else { throw ChybaServeru.jine(404, "") }
@@ -109,6 +113,7 @@ actor MockServer: AirineAPI {
             let jmeno = f.hlaseni.name ?? ""
             if pretizit.remove(jmeno) != nil { v.append(VysledekDavky(id: f.hlaseni.id, stav: "pretizeno", retry_after: 0)); continue }
             if neplatneVDavce.contains(jmeno) { v.append(VysledekDavky(id: f.hlaseni.id, stav: "neplatne")); continue }
+            if chybaVDavce.contains(jmeno) { v.append(VysledekDavky(id: f.hlaseni.id, stav: "chyba")); continue }
             let o = try await nahrajObsah(f.hlaseni, data: Data(f.obsah.utf8), mime: f.mime, zarizeni: nil)
             v.append(VysledekDavky(id: o.id, stav: o.stav.rawValue, otisk: o.otisk))
         }
@@ -1266,6 +1271,20 @@ final class PocitaneTajemstvi: UlozisteTajemstvi, @unchecked Sendable {
         #expect(await server.davky == [["a", "b", "c", "d"], ["b"]], "přetížený soubor jde znovu sám")
         #expect(await server.jednotliveObsahu == 1, "odmítnutý v dávce jde po jednom")
         for id in try k.karty().map(\.id) { #expect(await server.maObsah(id)) }
+    }
+
+    @Test func chybaVDavceJdePoJednom() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        await server.zapniDavky(chyba: ["b"])
+        for j in ["a", "b", "c"] {
+            let c = try soubor(d, "\(j).md", "---\nname: \(j)\ndescription: D\nairine:\n  typ: brief\n---\nText \(j)\n")
+            _ = try Nahlasovani(kopie: k).nahlas(cesta: c)
+        }
+        let v = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(v.odeslano == 3 && v.obsahu == 3 && v.online)
+        #expect(try k.fronta().isEmpty)
+        #expect(await server.davky == [["a", "b", "c"]], "zbytek dávky doběhne, chyba se v dávce neopakuje")
+        #expect(await server.jednotliveObsahu == 1, "soubor s chybou jde ještě jednou po jednom")
     }
 
     @Test func bezDavkyPoJednom() async throws {

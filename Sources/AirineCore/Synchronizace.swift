@@ -121,7 +121,7 @@ public struct Synchronizace: Sendable {
                     pretizene.append(polozka); cekat = max(cekat, r.retry_after ?? 2)
                 case "smazano": _ = try vyridChybu(p, .smazano, &v)
                 case "bez_prava": _ = try vyridChybu(p, .bezPravaKarty, &v)
-                default: jednotlive.append(p)           // neplatne: podrobnosti řekne hlášení po jednom
+                default: jednotlive.append(p)           // neplatne, chyba, neznámý stav: ještě jednou po jednom
                 }
             }
             if pretizene.isEmpty { break }
