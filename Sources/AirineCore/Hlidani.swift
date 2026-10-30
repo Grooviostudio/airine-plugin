@@ -121,7 +121,11 @@ public struct Hlidani: Sendable {
             }
         }
         for (c, id) in try kopie.stav("cesty", [String: String].self) ?? [:] { m[c, default: []].insert(id) }
-        for z in try kopie.zmizela() { m[z.cesta]?.remove(z.karta_id); if m[z.cesta]?.isEmpty == true { m[z.cesta] = nil } }
+        // Ve frontě, nebo už odeslaná: kanál změn `zmizelo_at` zatím nevrací,
+        // takže bez téhle paměti by každý start lišty poslal tatáž místa znovu.
+        for z in try kopie.zmizela() + kopie.odeslanaZmizelaMista() {
+            m[z.cesta]?.remove(z.karta_id); if m[z.cesta]?.isEmpty == true { m[z.cesta] = nil }
+        }
         return m
     }
 }
@@ -145,15 +149,29 @@ extension Kopie {
     }
 
     /// Soubor je zpátky (obnovený z koše, vrácený přesun): místo zase platí.
+    /// Server místo oživí sám, až stejnou cestu znovu nahlásíme.
     public func zrusZmizele(cesta: String) throws {
         let f = try zmizela()
         let zbytek = f.filter { $0.cesta != cesta }
         if zbytek.count != f.count { try nastavStav("zmizela", zbytek) }
+        let o = try odeslanaZmizelaMista()
+        let zbyva = o.filter { $0.cesta != cesta }
+        if zbyva.count != o.count { try nastavStav("zmizela_odeslana", zbyva) }
     }
+
+    /// Místa, která server už přijal jako zmizelá.
+    func odeslanaZmizelaMista() throws -> [ZmizeleMisto] { try stav("zmizela_odeslana", [ZmizeleMisto].self) ?? [] }
 
     func odeslanaZmizela(_ odeslana: [ZmizeleMisto]) throws {
         let hotova = Set(odeslana)
         try nastavStav("zmizela", try zmizela().filter { !hotova.contains($0) })
+        try nastavStav("zmizela_odeslana", Array(Set(try odeslanaZmizelaMista()).union(hotova)))
+    }
+
+    /// Dávka, kterou server odmítl tvarem (422): neopakovat ji donekonečna.
+    func zahodZmizela(_ davka: [ZmizeleMisto]) throws {
+        let z = Set(davka)
+        try nastavStav("zmizela", try zmizela().filter { !z.contains($0) })
     }
 }
 

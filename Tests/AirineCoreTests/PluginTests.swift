@@ -1086,8 +1086,14 @@ final class Podstrceny: URLProtocol, @unchecked Sendable {
         s = try await Synchronizace(kopie: k, api: server).probehni()
         #expect(try s.zmizelo == 1 && k.zmizela().isEmpty)
         #expect(await server.zmizelaPrijata?.map(\.cesta) == [rucne])
-        // Druhá událost téže cesty už nic nezařadí.
+        // Druhá událost téže cesty ani porovnání po startu už nic nezařadí.
         #expect(try h.zpracuj([rucne]).zmizelo == 0)
+        #expect(try h.porovnej().zmizelo == 0)
+        // Soubor se vrátil: nahlásí se a místo zase hlídáme.
+        try "# Porada\n".write(toFile: rucne, atomically: true, encoding: .utf8)
+        _ = try h.zpracuj([rucne])
+        try FileManager.default.removeItem(atPath: rucne)
+        #expect(try h.zpracuj([rucne]).zmizelo == 1)
     }
 
     @Test func presunJeTataKarta() async throws {

@@ -112,6 +112,8 @@ public struct Synchronizace: Sendable {
                 try kopie.odeslanaZmizela(davka)
             } catch ChybaServeru.neprihlasen {
                 v.neprihlasen = true; return
+            } catch ChybaServeru.jine(422, _) {
+                try kopie.zahodZmizela(davka)
             } catch {
                 return
             }
