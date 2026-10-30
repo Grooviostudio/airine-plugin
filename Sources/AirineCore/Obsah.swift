@@ -161,9 +161,8 @@ public enum Obsah {
         }
         /// Odešle nasbíranou dávku. Přetížené soubory zkusí znovu po `retry_after`
         /// (nejvýš dvakrát), odmítnuté bez podrobností pošle po jednom.
-        func odesli(zbyvaKaret: Int) async throws -> Bool {
-            var zbyva = davka, kolo = 0
-            davka = []; bajty = 0
+        func odesli(_ cast: [Kandidat], zbyvaKaret: Int) async throws -> Bool {
+            var zbyva = cast, kolo = 0
             while !zbyva.isEmpty {
                 let vysledky: [VysledekDavky]
                 do {
@@ -174,7 +173,14 @@ public enum Obsah {
                     v.online = false; v.zbyva = zbyvaKaret + zbyva.count; return true
                 } catch ChybaServeru.neprihlasen {
                     v.neprihlasen = true; v.zbyva = zbyvaKaret + zbyva.count; return true
-                } catch is ChybaServeru {              // 404, 413: dál po jednom
+                } catch ChybaServeru.davkaVelka where zbyva.count > 1 {
+                    // 413: dávka je na server velká, půlí se.
+                    let pul = zbyva.count / 2
+                    if try await odesli(Array(zbyva[..<pul]), zbyvaKaret: zbyvaKaret + zbyva.count - pul) { return true }
+                    return try await odesli(Array(zbyva[pul...]), zbyvaKaret: zbyvaKaret)
+                } catch ChybaServeru.davkaVelka {
+                    return try await jednotlive(zbyva[0], zbyva: zbyvaKaret + 1)
+                } catch is ChybaServeru {              // 404: dál po jednom
                     poJednom = true
                     for (j, c) in zbyva.enumerated() where try await jednotlive(c, zbyva: zbyvaKaret + zbyva.count - j) { return true }
                     return false
@@ -233,11 +239,12 @@ public enum Obsah {
                 continue
             }
             if !davka.isEmpty && (davka.count >= strop.souboru || bajty + c.data.count + 4096 > strop.bajtu) {
-                if try await odesli(zbyvaKaret: karty.count - i) { return v }
+                let d = davka; davka = []; bajty = 0
+                if try await odesli(d, zbyvaKaret: karty.count - i) { return v }
             }
             davka.append(c); bajty += c.data.count + 4096
         }
-        if !davka.isEmpty, try await odesli(zbyvaKaret: 0) { return v }
+        if !davka.isEmpty, try await odesli(davka, zbyvaKaret: 0) { return v }
         return v
     }
 

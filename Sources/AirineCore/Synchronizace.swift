@@ -121,7 +121,20 @@ public struct Synchronizace: Sendable {
                 try kopie.pokusSelhal(zbyva[0].0.hlaseni); v.online = false; return .konec
             } catch ChybaServeru.neprihlasen { v.neprihlasen = true; return .konec }
             catch ChybaServeru.ciziZarizeni { v.ciziZarizeni = true; return .konec }
-            catch is ChybaServeru { return .poJednom }      // 404, 413, cokoli celé dávky
+            catch ChybaServeru.davkaVelka {
+                // 413: dávka je na server velká. Půlí se; jeden soubor jde po jednom.
+                guard zbyva.count > 1 else { jednotlive.append(zbyva[0].0); break }
+                let pul = zbyva.count / 2
+                for cast in [Array(zbyva[..<pul]), Array(zbyva[pul...])] {
+                    switch try await posliDavku(cast, &v) {
+                    case .hotovo: continue
+                    case .konec: return .konec
+                    case .poJednom: jednotlive += cast.map(\.0)
+                    }
+                }
+                break
+            }
+            catch is ChybaServeru { return .poJednom }      // 404, cokoli celé dávky
             var pretizene: [(Kopie.Polozka, SouborDavky)] = []
             var cekat = 0.0
             for (polozka, r) in zip(zbyva, vysledky) {

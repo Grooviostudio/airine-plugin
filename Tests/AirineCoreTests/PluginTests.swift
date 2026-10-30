@@ -100,6 +100,10 @@ actor MockServer: AirineAPI {
     var pretizit: Set<String> = []
     var neplatneVDavce: Set<String> = []
     var chybaVDavce: Set<String> = []
+    /// 413 pro dávky větší než tolik souborů; `pokusyDavek` = velikosti všech pokusů.
+    var velkaNad: Int? = nil
+    var pokusyDavek: [Int] = []
+    func nastav(velkaNad n: Int?) { velkaNad = n }
     var jednotliveObsahu = 0
     func zapniDavky(pretizit: Set<String> = [], neplatne: Set<String> = [], chyba: Set<String> = []) {
         davky = []; self.pretizit = pretizit; neplatneVDavce = neplatne; chybaVDavce = chyba
@@ -111,6 +115,8 @@ actor MockServer: AirineAPI {
     func nahrajDavku(_ soubory: [SouborDavky]) async throws -> [VysledekDavky] {
         guard online else { throw ChybaServeru.bezSpojeni }
         guard davky != nil else { throw ChybaServeru.jine(404, "") }
+        pokusyDavek.append(soubory.count)
+        if let n = velkaNad, soubory.count > n { throw ChybaServeru.davkaVelka }
         davky!.append(soubory.map { $0.hlaseni.name ?? "" })
         var v: [VysledekDavky] = []
         for f in soubory {
@@ -853,6 +859,22 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
         #expect(try await Obsah.dohon(kopie: k, api: server).nahrano == 0)
     }
 
+    @Test func dohnaniNa413Puli() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        for j in ["a", "b", "c", "e"] {
+            let c = try soubor(d, "\(j).md", "\(j)\n")
+            var karta = Karta(id: j, name: j, popis: j, typ: "brief", otisk: Otisk.sha256(Data("\(j)\n".utf8)), mista: [Misto(cesta: c)])
+            karta.menit = true
+            await server.pridej(karta)
+        }
+        _ = try await Synchronizace(kopie: k, api: server).probehni()
+        await server.zapniDavky(); await server.nastav(velkaNad: 1)
+        let v = try await Obsah.dohon(kopie: k, api: server)
+        #expect(v.nahrano == 4 && v.chyby.isEmpty && v.online)
+        #expect(await server.pokusyDavek == [4, 2, 1, 1, 2, 1, 1])
+        #expect(await server.jednotliveObsahu == 0)
+    }
+
     @Test func stropyDavkyZeServeru() async throws {
         #expect(StropyDavky.zeServeru(["obsah_davka": 50, "obsah_davka_bajtu": 3_500_000]) == .vychozi)
         #expect(StropyDavky.zeServeru([:]) == nil)
@@ -1355,6 +1377,29 @@ final class PocitaneTajemstvi: UlozisteTajemstvi, @unchecked Sendable {
         #expect(try k.fronta().isEmpty)
         #expect(await server.davky == [["a", "b", "c"]], "zbytek dávky doběhne, chyba se v dávce neopakuje")
         #expect(await server.jednotliveObsahu == 1, "soubor s chybou jde ještě jednou po jednom")
+    }
+
+    @Test func na413SeDavkaPuli() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        await server.zapniDavky(); await server.nastav(velkaNad: 2)
+        for j in ["a", "b", "c", "e", "f"] {
+            let c = try soubor(d, "\(j).md", "---\nname: \(j)\ndescription: D\nairine:\n  typ: brief\n---\nText \(j)\n")
+            _ = try Nahlasovani(kopie: k).nahlas(cesta: c)
+        }
+        let v = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(v.odeslano == 5 && v.obsahu == 5 && v.online)
+        #expect(await server.pokusyDavek == [5, 2, 3, 1, 2], "půlí se, dokud dávka neprojde")
+        #expect(await server.jednotliveObsahu == 0)
+        #expect(try k.fronta().isEmpty)
+
+        // Ani jeden soubor neprojde dávkou: ten jde po jednom.
+        await server.nastav(velkaNad: 0)
+        for j in ["g", "h"] {
+            _ = try Nahlasovani(kopie: k).nahlas(cesta: try soubor(d, "\(j).md", "---\nname: \(j)\ndescription: D\nairine:\n  typ: brief\n---\nText \(j)\n"))
+        }
+        let w = try await Synchronizace(kopie: k, api: server).probehni()
+        let jednotlive = await server.jednotliveObsahu
+        #expect(w.odeslano == 2 && w.obsahu == 2 && jednotlive == 2)
     }
 
     @Test func bezDavkyPoJednom() async throws {
