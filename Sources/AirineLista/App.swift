@@ -122,6 +122,8 @@ final class Stav: ObservableObject {
                                                   api: { HttpAirine(nastaveni: $0, token: t) }) {
             online = v.online
             prihlasen = !v.neprihlasen
+            // Token zrušený nebo vyměněný v terminálu: příště ho přečti znovu.
+            if v.neprihlasen { Tajemstvi.vychozi(domov).zapomen("token") }
             rozpory = v.rozpory
         }
         obnov()

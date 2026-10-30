@@ -1,5 +1,6 @@
 import CoreServices
 import Foundation
+import AirineCore
 
 /// FSEvents nad vybranými složkami. Nic neprochází, jen sbírá cesty, které
 /// macOS ohlásí, a po zklidnění (editory ukládají víckrát za sebou) je předá
@@ -14,11 +15,13 @@ final class Hlidac: @unchecked Sendable {
     private var vse = false
     private var odklad: DispatchWorkItem?
     private let predej: @MainActor (Set<String>, Bool) -> Void
+    private let slozky: [String]
 
     /// `predej(cesty, vse)`: `vse` = macOS události sloučil a je potřeba
     /// porovnat celé složky (příznak MustScanSubDirs).
     init(slozky: [String], predej: @escaping @MainActor (Set<String>, Bool) -> Void) {
         self.predej = predej
+        self.slozky = slozky
         guard !slozky.isEmpty else { return }
         var ctx = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(),
                                        retain: nil, release: nil, copyDescription: nil)
@@ -50,7 +53,8 @@ final class Hlidac: @unchecked Sendable {
 
     private func prijmi(_ nove: [String], vse: Bool) {
         // Jen MD soubory a cesty bez přípony (smazaná nebo přesunutá složka).
-        for c in nove {
+        // Události z knihoven a sestavení (npm install…) se zahodí hned.
+        for c in nove where !Slozky.vKnihovne(c, slozky) {
             let pripona = (c as NSString).pathExtension.lowercased()
             if ["md", "mdc"].contains(pripona) || pripona.isEmpty { cesty.insert(c) }
         }

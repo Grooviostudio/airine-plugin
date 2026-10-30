@@ -1,5 +1,14 @@
 # Changelog
 
+## 30. 10. 2026
+
+- **Knihovny a sestavení se nehlásí nikdy.** `node_modules`, `vendor`, `bower_components`,
+  `dist`, `build`, `.next`, `.nuxt`, `out`, `coverage`, `Pods`, `DerivedData`, `.git`, `venv`,
+  `.venv`, `__pycache__`. Platí pro hook, hlídání (události se zahodí hned), místní MCP
+  a `nahraj-obsah` ([docs/slozky.md](docs/slozky.md)).
+- **Klíčenka jednou za proces.** Token a klíč místní kopie se drží v paměti procesu. Lišta
+  token přečte znovu jen po 401. macOS se tak u ad hoc podepsané lišty neptá každou minutu.
+
 ## 29. 10. 2026
 
 - **Lišta hlídá vybrané složky.** Změna MD souboru je v Airine do minuty, ať ji udělal

@@ -989,7 +989,7 @@ final class Podstrceny: URLProtocol, @unchecked Sendable {
         #expect(Slozky.duvod("/Users/o/Jinde/a.md", s) == "mimo složky pro Znalosti")
         #expect(Slozky.duvod("/Users/o/Groovio/Web/.claude/worktrees/x/CLAUDE.md", s) == "pracovní kopie repozitáře")
         #expect(Slozky.duvod("/Users/o/Jinde/.claude/worktrees/x/a.md", []) == "pracovní kopie repozitáře")
-        #expect(Slozky.duvod("/Users/o/Groovio/.git/a.md", s) == "skrytá složka")
+        #expect(Slozky.duvod("/Users/o/Groovio/.git/a.md", s) == "knihovna nebo sestavení")
         #expect(Slozky.duvod("/Users/o/Groovio/Web/.obsidian/a.md", s) == "skrytá složka")
         #expect(Slozky.duvod("/Users/o/Groovio/.claude/skills/x/SKILL.md", s) == nil, "skills ve skryté složce se hlásí")
         #expect(Slozky.duvod("/Users/o/Groovio/.cursor/rules/a.mdc", s) == nil)
@@ -1126,5 +1126,64 @@ final class Podstrceny: URLProtocol, @unchecked Sendable {
         try "Text 2\n".write(toFile: cesta, atomically: true, encoding: .utf8)
         _ = try h.zpracuj([cesta])
         #expect(try k.fronta().first?.hlaseni.id == "z-importu", "další verze jde pod převzatou kartu")
+    }
+}
+
+@Suite struct KnihovnyTests {
+    @Test func knihovnyASestaveniSeNehlasi() {
+        let s = ["/G"]
+        for d in ["node_modules", "vendor", "bower_components", "dist", "build", ".next", ".nuxt", "out",
+                  "coverage", "Pods", "DerivedData", ".git", "venv", ".venv", "__pycache__"] {
+            #expect(Slozky.duvod("/G/web/\(d)/balik/README.md", s) == "knihovna nebo sestavení", "\(d)")
+            #expect(Slozky.vKnihovne("/G/web/\(d)/balik/README.md", s))
+        }
+        #expect(Slozky.duvod("/G/web/builds/a.md", s) == nil, "po celých složkách")
+        #expect(Slozky.duvod("/G/web/build.md", s) == nil, "soubor se jménem složky se hlásí")
+        #expect(!Slozky.vKnihovne("/build/a.md", ["/build"]), "vybraná složka sama se nepočítá")
+        #expect(!Slozky.vKnihovne("/H/node_modules/a.md", s), "mimo vybrané složky rozhoduje duvod")
+    }
+
+    @Test func hlidaniKnihovnyNecte() throws {
+        let d = try docasnyDomov(); let k = try kopie(d)
+        let koren = [d.slozka.appendingPathComponent("prace/Znalosti").path]
+        let readme = try soubor(d, "Znalosti/web/node_modules/balik/README.md", "# Balík\n")
+        _ = try soubor(d, "Znalosti/web/dist/README.md", "# Sestavení\n")
+        _ = try soubor(d, "Znalosti/web/brief.md", "# Brief\n")
+        let h = Hlidani(kopie: k, slozky: koren, zarizeni: nil)
+        #expect(try h.zpracuj([readme]) == Hlidani.Vysledek(), "událost z node_modules se zahodí")
+        let v = try h.porovnej()
+        #expect(v.nove == 1 && v.preskoceno == 0)
+        #expect(try k.fronta().map(\.hlaseni.name) == ["brief"])
+    }
+}
+
+/// Počítá čtení, aby šlo ověřit „jedno čtení na položku za proces“.
+final class PocitaneTajemstvi: UlozisteTajemstvi, @unchecked Sendable {
+    var data: [String: Data] = [:]
+    var cteni: [String: Int] = [:]
+    func cti(_ jmeno: String) throws -> Data? { cteni[jmeno, default: 0] += 1; return data[jmeno] }
+    func zapis(_ jmeno: String, _ d: Data) throws { data[jmeno] = d }
+    func smaz(_ jmeno: String) throws { data[jmeno] = nil }
+}
+
+@Suite struct KlicenkaTests {
+    @Test func jednoCteniNaPolozku() throws {
+        let zdroj = PocitaneTajemstvi(); zdroj.data["token"] = Data("t1".utf8)
+        let u = PametTajemstvi(zdroj)
+        for _ in 0..<5 { _ = try u.cti("token"); _ = try u.cti("chybi") }
+        _ = try Tajemstvi.klicKopie(u); _ = try Tajemstvi.klicKopie(u)
+        #expect(zdroj.cteni == ["token": 1, "chybi": 1, "klic-kopie": 1])
+        // Po 401 lišta token zapomene a přečte ho znovu, jednou.
+        zdroj.data["token"] = Data("t2".utf8)
+        u.zapomen("token")
+        #expect(try u.cti("token") == Data("t2".utf8) && u.cti("token") == Data("t2".utf8))
+        #expect(zdroj.cteni["token"] == 2)
+        try u.zapis("token", Data("t3".utf8))
+        #expect(try u.cti("token") == Data("t3".utf8) && zdroj.cteni["token"] == 2)
+    }
+
+    @Test func vychoziJeJednoNaProces() throws {
+        let d = try docasnyDomov()
+        #expect(Tajemstvi.vychozi(d) === Tajemstvi.vychozi(d))
     }
 }

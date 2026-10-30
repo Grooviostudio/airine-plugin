@@ -71,9 +71,56 @@ public struct SouborTajemstvi: UlozisteTajemstvi {
     public func smaz(_ jmeno: String) throws { try? FileManager.default.removeItem(at: slozka.appendingPathComponent(jmeno)) }
 }
 
+/// Tajemství čtené jednou za proces. Klíčenka se u ad hoc podepsané binárky
+/// ptá při každém čtení, proto se hodnota drží v paměti. Lišta po 401
+/// zavolá `zapomen("token")` a token přečte znovu.
+public final class PametTajemstvi: UlozisteTajemstvi, @unchecked Sendable {
+    let zdroj: UlozisteTajemstvi
+    private var pamet: [String: Data?] = [:]
+    private let zamek = NSLock()
+
+    public init(_ zdroj: UlozisteTajemstvi) { self.zdroj = zdroj }
+
+    public func cti(_ jmeno: String) throws -> Data? {
+        zamek.lock(); defer { zamek.unlock() }
+        if let d = pamet[jmeno] { return d }
+        let d = try zdroj.cti(jmeno)
+        pamet[jmeno] = .some(d)
+        return d
+    }
+
+    public func zapis(_ jmeno: String, _ data: Data) throws {
+        zamek.lock(); defer { zamek.unlock() }
+        try zdroj.zapis(jmeno, data)
+        pamet[jmeno] = .some(data)
+    }
+
+    public func smaz(_ jmeno: String) throws {
+        zamek.lock(); defer { zamek.unlock() }
+        try zdroj.smaz(jmeno)
+        pamet[jmeno] = .some(nil)
+    }
+
+    /// Příští `cti` sáhne znovu do Klíčenky (token zrušený nebo vyměněný).
+    public func zapomen(_ jmeno: String) {
+        zamek.lock(); defer { zamek.unlock() }
+        pamet[jmeno] = nil
+    }
+}
+
 public enum Tajemstvi {
-    public static func vychozi(_ domov: Domov) -> UlozisteTajemstvi {
-        ProcessInfo.processInfo.environment["AIRINE_KLICE"] == "soubor" ? SouborTajemstvi(domov: domov) : Klicenka()
+    private static let zamek = NSLock()
+    nonisolated(unsafe) private static var sdilene: [String: PametTajemstvi] = [:]
+
+    /// Jedno úložiště na domov a proces, takže každou položku přečte jednou.
+    public static func vychozi(_ domov: Domov) -> PametTajemstvi {
+        let soubor = ProcessInfo.processInfo.environment["AIRINE_KLICE"] == "soubor"
+        let klic = (soubor ? "soubor:" : "klicenka:") + domov.slozka.path
+        zamek.lock(); defer { zamek.unlock() }
+        if let u = sdilene[klic] { return u }
+        let u = PametTajemstvi(soubor ? SouborTajemstvi(domov: domov) : Klicenka())
+        sdilene[klic] = u
+        return u
     }
 
     /// Klíč místní kopie. Vznikne při prvním spuštění a nikdy neopustí Mac.

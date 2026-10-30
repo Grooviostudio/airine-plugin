@@ -33,7 +33,7 @@ public struct Hlidani: Sendable {
     public func zpracuj(_ cesty: Set<String>) throws -> Vysledek {
         var v = Vysledek()
         let zname = try znamaMista()
-        for c in cesty.map(Slozky.normalizuj).sorted() {
+        for c in cesty.map(Slozky.normalizuj).sorted() where !Slozky.vKnihovne(c, slozky) {
             var adresar: ObjCBool = false
             if FileManager.default.fileExists(atPath: c, isDirectory: &adresar) {
                 if adresar.boolValue { continue }
@@ -61,9 +61,9 @@ public struct Hlidani: Sendable {
                 let p = u.standardizedFileURL.path
                 let jmeno = u.lastPathComponent
                 if (try? u.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
-                    // Do skrytých složek a pracovních kopií se nevstupuje vůbec,
-                    // kromě míst se skills a pravidly agentů.
-                    if jmeno == "node_modules" || (jmeno.hasPrefix(".") && !Self.vedeKPovolene(p, koren)) || p.contains("/.claude/worktrees") {
+                    // Do knihoven, sestavení, skrytých složek a pracovních kopií se
+                    // nevstupuje vůbec, kromě míst se skills a pravidly agentů.
+                    if Slozky.vzdyPreskocene.contains(jmeno) || (jmeno.hasPrefix(".") && !Self.vedeKPovolene(p, koren)) || p.contains("/.claude/worktrees") {
                         e.skipDescendants()
                     }
                     continue
