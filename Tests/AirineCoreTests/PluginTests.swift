@@ -908,6 +908,7 @@ final class Podstrceny: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var pozadavky: [URLRequest] = []
     nonisolated(unsafe) static var tela: [Data] = []
     nonisolated(unsafe) static var odpoved: (URLRequest) -> (Int, String) = { _ in (500, "") }
+    nonisolated(unsafe) static var hlavicky: (URLRequest) -> [String: String]? = { _ in nil }
     static let zamek = NSLock()
 
     override class func canInit(with request: URLRequest) -> Bool { true }
@@ -920,7 +921,7 @@ final class Podstrceny: URLProtocol, @unchecked Sendable {
             s.close()
         }
         Self.zamek.lock(); Self.pozadavky.append(request); Self.tela.append(telo); let (kod, json) = Self.odpoved(request); Self.zamek.unlock()
-        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: kod, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: kod, httpVersion: nil, headerFields: Self.hlavicky(request))!, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(json.utf8))
         client?.urlProtocolDidFinishLoading(self)
     }
@@ -955,6 +956,25 @@ final class Podstrceny: URLProtocol, @unchecked Sendable {
         #expect(p[1].httpMethod == "PUT" && Podstrceny.tela[1] == Data("A\n".utf8))
         let potvrzeni = try #require(try JSONSerialization.jsonObject(with: Podstrceny.tela[2]) as? [String: Any])
         #expect(potvrzeni["ulozeno"] as? String == "ws/katalog/k1/o.md" && potvrzeni["name"] as? String == "brief")
+    }
+
+    @Test func na503SRetryAfterPockaAZkusiZnovu() async throws {
+        Podstrceny.pozadavky = []; Podstrceny.tela = []
+        Podstrceny.hlavicky = { _ in ["Retry-After": "0"] }
+        defer { Podstrceny.hlavicky = { _ in nil } }
+        Podstrceny.odpoved = { _ in Podstrceny.pozadavky.count < 2 ? (503, "{}") : (200, #"{"stav":"ok","id":"k1","otisk":"o"}"#) }
+        #expect(try await api().nahlas(h).stav == .ok)
+        #expect(Podstrceny.pozadavky.count == 2)
+        // Přetížení trvá: po dvou pokusech se hlášení vrátí do fronty.
+        Podstrceny.pozadavky = []
+        Podstrceny.odpoved = { _ in (503, "{}") }
+        await #expect(throws: ChybaServeru.bezSpojeni) { try await api().nahlas(h) }
+        #expect(Podstrceny.pozadavky.count == 3)
+        // 503 bez Retry-After se nezkouší znovu.
+        Podstrceny.pozadavky = []
+        Podstrceny.hlavicky = { _ in nil }
+        await #expect(throws: ChybaServeru.bezSpojeni) { try await api().nahlas(h) }
+        #expect(Podstrceny.pozadavky.count == 1)
     }
 
     @Test func uzNahranoPreskociPutAKvotaJeObsahNeprosel() async throws {

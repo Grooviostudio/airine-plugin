@@ -61,17 +61,29 @@ public struct HttpAirine: AirineAPI {
         return r
     }
 
+    /// Kolikrát zkusit znovu po 503 s Retry-After a jak dlouho nejvýš čekat.
+    static let pokusy503 = 2
+    static let nejdeleCekat = 30.0
+
     func posli(_ r: URLRequest) async throws -> (Data, Int) {
-        do {
-            let (data, odp) = try await session.data(for: r)
-            let kod = (odp as? HTTPURLResponse)?.statusCode ?? 0
+        var pokus = 0
+        while true {
+            let data: Data, odp: URLResponse
+            do { (data, odp) = try await session.data(for: r) } catch is URLError { throw ChybaServeru.bezSpojeni }
+            let http = odp as? HTTPURLResponse
+            let kod = http?.statusCode ?? 0
+            // Úložiště je chvíli přetížené: server řekne, za jak dlouho to zkusit.
+            if kod == 503, pokus < Self.pokusy503,
+               let po = http?.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init), po >= 0 {
+                pokus += 1
+                try await Task.sleep(for: .seconds(min(po, Self.nejdeleCekat)))
+                continue
+            }
             switch kod {
             case 500..<600, 0: throw ChybaServeru.bezSpojeni
             case 401: throw ChybaServeru.neprihlasen
             default: return (data, kod)
             }
-        } catch is URLError {
-            throw ChybaServeru.bezSpojeni
         }
     }
 

@@ -8,6 +8,8 @@
   a `nahraj-obsah` ([docs/slozky.md](docs/slozky.md)).
 - **Klíčenka jednou za proces.** Token a klíč místní kopie se drží v paměti procesu. Lišta
   token přečte znovu jen po 401. macOS se tak u ad hoc podepsané lišty neptá každou minutu.
+- Na 503 s `Retry-After` (přetížené úložiště) plugin počká, nejdéle 30 s, a zkusí to až
+  dvakrát znovu. Pak hlášení zůstane ve frontě do příští synchronizace.
 
 ## 29. 10. 2026
 
