@@ -104,6 +104,9 @@ actor MockServer: AirineAPI {
     func zapniDavky(pretizit: Set<String> = [], neplatne: Set<String> = [], chyba: Set<String> = []) {
         davky = []; self.pretizit = pretizit; neplatneVDavce = neplatne; chybaVDavce = chyba
     }
+    var pravidla: PravidlaSlozek? = nil
+    func nastavPravidla(_ p: PravidlaSlozek?) { pravidla = p }
+    func pravidlaSlozek() async throws -> PravidlaSlozek? { pravidla }
     func nahrajDavku(_ soubory: [SouborDavky]) async throws -> [VysledekDavky] {
         guard online else { throw ChybaServeru.bezSpojeni }
         guard davky != nil else { throw ChybaServeru.jine(404, "") }
@@ -1199,6 +1202,35 @@ final class Podstrceny: URLProtocol, @unchecked Sendable {
 }
 
 @Suite struct KnihovnyTests {
+    @Test func pravidlaZeServeruJenRozumna() {
+        let ok: [String: Any] = ["preskocit_slozky": ["node_modules", ".git"], "skryte_povolene": [".claude/skills"]]
+        #expect(PravidlaSlozek.zeServeru(ok) == PravidlaSlozek(preskocit: ["node_modules", ".git"], skryte: [".claude/skills"]))
+        #expect(PravidlaSlozek.zeServeru([:]) == nil, "starý server: platí vestavěná")
+        #expect(PravidlaSlozek.zeServeru(["preskocit_slozky": [String](), "skryte_povolene": [String]()]) == nil)
+        #expect(PravidlaSlozek.zeServeru(["preskocit_slozky": ["a/b"], "skryte_povolene": [String]()]) == nil)
+        #expect(PravidlaSlozek.zeServeru(["preskocit_slozky": ["x"], "skryte_povolene": ["skills"]]) == nil)
+    }
+
+    @Test func pravidlaSeUloziAPlatiPoOtevreniKopie() async throws {
+        let d = try docasnyDomov(); let klic = SymmetricKey(size: .bits256)
+        let k = try Kopie(domov: d, klic: klic)
+        // Jméno, které žádný jiný test nepoužívá: pravidla platí pro celý proces.
+        let p = PravidlaSlozek(preskocit: PravidlaSlozek.vestavena.preskocit + ["zz-jen-test"], skryte: PravidlaSlozek.vestavena.skryte)
+        defer { Slozky.pouzij(.vestavena) }
+        let server = MockServer(); await server.nastavPravidla(p)
+        _ = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(try k.stav("pravidla_slozek", PravidlaSlozek.self) == p)
+        #expect(Slozky.duvod("/G/zz-jen-test/a.md", ["/G"]) == "knihovna nebo sestavení")
+        Slozky.pouzij(.vestavena)
+        #expect(Slozky.duvod("/G/zz-jen-test/a.md", ["/G"]) == nil)
+        _ = try Kopie(domov: d, klic: klic)     // hook: nový proces vezme pravidla z kopie
+        #expect(Slozky.duvod("/G/zz-jen-test/a.md", ["/G"]) == "knihovna nebo sestavení")
+        // Do 6 hodin se server znovu neptá.
+        await server.nastavPravidla(.vestavena)
+        _ = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(try k.stav("pravidla_slozek", PravidlaSlozek.self) == p)
+    }
+
     @Test func knihovnyASestaveniSeNehlasi() {
         let s = ["/G"]
         for d in ["node_modules", "vendor", "bower_components", "dist", "build", ".next", ".nuxt", "out",

@@ -10,6 +10,9 @@
   token přečte znovu jen po 401. macOS se tak u ad hoc podepsané lišty neptá každou minutu.
 - Na 503 s `Retry-After` (přetížené úložiště) plugin počká, nejdéle 30 s, a zkusí to až
   dvakrát znovu. Pak hlášení zůstane ve frontě do příští synchronizace.
+- **Přeskakované složky ze serveru.** Seznam knihoven a sestavení a povolená skrytá
+  místa plugin bere z GET /api/katalog/import (jednou za 6 hodin, uloží do kopie).
+  Bez spojení nebo se starým serverem platí vestavěný seznam.
 - **Obsah po dávkách.** Fronta posílá soubory s obsahem po 50 (do 3,5 MB) jedním požadavkem
   `POST /api/katalog/obsah-davka`. Přetížené soubory pošle znovu po `retry_after`, odmítnuté
   (`neplatne`), se stavem `chyba` nebo neznámým stavem ještě jednou po jednom. Server bez dávek nebo 413: po jednom jako dřív.

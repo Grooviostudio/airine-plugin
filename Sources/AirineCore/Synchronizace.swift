@@ -55,7 +55,21 @@ public struct Synchronizace: Sendable {
         if v.online && !v.neprihlasen && !v.ciziZarizeni { try await odesliZmizela(&v) }
         if v.online && !v.neprihlasen { try await stahni(&v) }
         if v.online && !v.neprihlasen { try kopie.nastavStav("posledni_sync", Date()) }
+        if v.online && !v.neprihlasen { try await obnovPravidla() }
         return v
+    }
+
+    /// Jak často se ptát serveru na přeskakované složky.
+    static let pravidlaPo: TimeInterval = 6 * 3600
+
+    /// Přeskakované složky ze serveru, nejvýš jednou za 6 hodin. Selhání nevadí:
+    /// platí poslední uložená, jinak vestavěná.
+    func obnovPravidla() async throws {
+        if let kdy = try kopie.stav("pravidla_slozek_kdy", Date.self), Date().timeIntervalSince(kdy) < Self.pravidlaPo { return }
+        guard let p = try? await api.pravidlaSlozek() else { return }
+        try kopie.nastavStav("pravidla_slozek_kdy", Date())
+        try kopie.nastavStav("pravidla_slozek", p)
+        Slozky.pouzij(p)
     }
 
     func odesliFrontu(_ v: inout Vysledek) async throws {

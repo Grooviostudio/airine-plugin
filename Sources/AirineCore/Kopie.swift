@@ -21,6 +21,8 @@ public final class Kopie: @unchecked Sendable {
             CREATE TABLE IF NOT EXISTS fronta (klic TEXT PRIMARY KEY, poradi INTEGER NOT NULL,
               data BLOB NOT NULL, pokusy INTEGER NOT NULL DEFAULT 0, odmitnuto BLOB)
             """)
+        // Hook i lišta berou přeskakované složky z poslední synchronizace.
+        Slozky.pouzij(try? stav("pravidla_slozek", PravidlaSlozek.self))
     }
 
     public static func otevri(_ domov: Domov = Domov()) throws -> Kopie {

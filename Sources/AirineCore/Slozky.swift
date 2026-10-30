@@ -6,15 +6,25 @@ import Foundation
 /// výjimkou jsou místa, kde leží skills a pravidla agentů.
 public enum Slozky {
     /// Skryté složky, které se hlásí dál: skills, agenti a pravidla.
-    static let povoleneSkryte = [".claude/skills", ".claude/agents", ".claude/commands", ".cursor/rules"]
+    static var povoleneSkryte: [String] { platna.skryte }
 
     /// Knihovny, sestavení a prostředí nástrojů. Nehlásí se z nich nic, ani karta:
     /// jen v `node_modules` leží tisíce README cizích balíčků.
-    public static let vzdyPreskocene: Set<String> = [
-        "node_modules", "vendor", "bower_components",
-        "dist", "build", ".next", ".nuxt", "out", "coverage",
-        "Pods", "DerivedData", ".git", "venv", ".venv", "__pycache__",
-    ]
+    public static var vzdyPreskocene: Set<String> { platna.mnozina }
+
+    /// Platná pravidla: ze serveru (GET /api/katalog/import), jinak vestavěná.
+    nonisolated(unsafe) private static var pravidla = (PravidlaSlozek.vestavena, Set(PravidlaSlozek.vestavena.preskocit))
+    private static let zamek = NSLock()
+    private static var platna: (skryte: [String], mnozina: Set<String>) {
+        zamek.lock(); defer { zamek.unlock() }
+        return (pravidla.0.skryte, pravidla.1)
+    }
+
+    /// Pravidla ze serveru (uložená v kopii) platí pro celý proces.
+    public static func pouzij(_ p: PravidlaSlozek?) {
+        guard let p else { return }
+        zamek.lock(); pravidla = (p, Set(p.preskocit)); zamek.unlock()
+    }
 
     /// Leží cesta pod knihovnou nebo sestavením uvnitř některé vybrané složky?
     /// Hlídání podle toho zahodí událost dřív, než cokoli čte.
@@ -49,5 +59,29 @@ public enum Slozky {
             if !povoleneSkryte.contains(where: { zbytek == $0 || zbytek.hasPrefix($0 + "/") }) { return "skrytá složka" }
         }
         return nil
+    }
+}
+
+/// Které složky se přeskakují. Server je posílá jako `preskocit_slozky`
+/// a `skryte_povolene`; vestavěná kopie platí offline a před první synchronizací.
+public struct PravidlaSlozek: Codable, Sendable, Equatable {
+    public var preskocit: [String]
+    public var skryte: [String]
+
+    public static let vestavena = PravidlaSlozek(
+        preskocit: ["node_modules", "vendor", "bower_components",
+                    "dist", "build", ".next", ".nuxt", "out", "coverage",
+                    "Pods", "DerivedData", ".git", "venv", ".venv", "__pycache__"],
+        skryte: [".claude/skills", ".claude/agents", ".claude/commands", ".cursor/rules"])
+
+    /// Z odpovědi serveru. Jen celá jména složek a skryté cesty s tečkou;
+    /// cokoli jiného (chybí, prázdné, divný tvar) = `nil` a platí dosavadní.
+    public static func zeServeru(_ json: [String: Any]) -> PravidlaSlozek? {
+        guard let p = json["preskocit_slozky"] as? [String], let s = json["skryte_povolene"] as? [String],
+              !p.isEmpty, p.count <= 200, s.count <= 50,
+              p.allSatisfy({ !$0.isEmpty && !$0.contains("/") && $0 != "." && $0 != ".." }),
+              s.allSatisfy({ $0.hasPrefix(".") && !$0.hasSuffix("/") && !$0.contains("..") })
+        else { return nil }
+        return PravidlaSlozek(preskocit: p, skryte: s)
     }
 }

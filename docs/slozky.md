@@ -42,8 +42,11 @@ kvůli kterým katalog vzniká, a mají v něm zůstat. Platí to jen uvnitř vy
 Vybraná složka sama může být skrytá (třeba `~/.claude`). Knihovny a sestavení se ani
 pod nimi nehlásí.
 
-Seznam knihoven a sestavení je stejný jako u importu složky v prohlížeči. Až ho bude
-posílat server, plugin ho převezme odtamtud.
+Seznam knihoven a sestavení i povolených skrytých míst je stejný jako u importu složky
+v prohlížeči. Plugin ho bere ze serveru (GET /api/katalog/import, `preskocit_slozky`
+a `skryte_povolene`), nejvýš jednou za 6 hodin, a ukládá si ho do kopie, takže platí
+i pro hook a offline. Dokud ho nemá, nebo když server pošle nesmyslný tvar, platí
+vestavěná kopie v pluginu.
 
 Uvnitř vybraných složek dál platí vynechání obsahu ([vynechani.md](vynechani.md))
 i pojistka na tajemství.

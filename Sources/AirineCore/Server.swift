@@ -18,6 +18,8 @@ public protocol AirineAPI: Sendable {
     /// Výsledky jsou ve stejném pořadí. Server bez téhle cesty hází `jine(404, …)`,
     /// příliš velká dávka `davkaVelka`: volající pak pošle soubory po jednom.
     func nahrajDavku(_ soubory: [SouborDavky]) async throws -> [VysledekDavky]
+    /// Přeskakované složky z GET /api/katalog/import; `nil` = server je neposílá.
+    func pravidlaSlozek() async throws -> PravidlaSlozek?
 }
 
 /// Jeden soubor v dávce obsahu: hlášení karty a text, jehož SHA-256 je otisk.
@@ -48,6 +50,8 @@ public struct VysledekDavky: Codable, Sendable, Equatable {
 
 extension AirineAPI {
     public func nahrajDavku(_ soubory: [SouborDavky]) async throws -> [VysledekDavky] { throw ChybaServeru.jine(404, "obsah-davka") }
+
+    public func pravidlaSlozek() async throws -> PravidlaSlozek? { nil }
 
     /// Server bez téhle cesty: zmizelá místa počkají ve frontě.
     public func zmizela(_ mista: [ZmizeleMisto]) async throws -> Int { throw ChybaServeru.jine(404, "zmizela") }
@@ -226,6 +230,12 @@ public struct HttpAirine: AirineAPI {
         case 403: throw ChybaServeru.neprihlasen
         default: throw Self.chybaHlaseni(data, kod)
         }
+    }
+
+    public func pravidlaSlozek() async throws -> PravidlaSlozek? {
+        let (data, kod) = try await posli(pozadavek("api/katalog/import"))
+        guard (200..<300).contains(kod) else { throw Self.neocekavany(data, kod) }
+        return ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any]).flatMap(PravidlaSlozek.zeServeru)
     }
 
     public func zmizela(_ mista: [ZmizeleMisto]) async throws -> Int {
