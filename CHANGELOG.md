@@ -19,7 +19,7 @@
   v dávce stav `nad_stropem`, s `strop`, `pocet`, `tarif`) hlášení nezahodí ani neodmítne:
   nová karta čeká ve frontě, nová verze existující karty projde. Nové karty se pak 6 hodin
   nezkouší, „Synchronizovat teď“ v liště a `airine sync` je zkusí hned. Lišta ukáže
-  „Katalog je plný (2 000 souborů, Solo). Na Macu čeká N nových souborů, nic se neztratí.“
+  „Katalog je plný (2 000 souborů, Solo), navyš tarif. Na Macu čeká N nových souborů, nic se neztratí.“
 
 ## 30. 10. 2026
 

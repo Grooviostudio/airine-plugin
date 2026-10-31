@@ -27,7 +27,7 @@ zatím není; do prvního vydání jde jen sestavení ze zdrojů (níž).
 Odhlášení je v liště (**Odhlásit**) nebo `airine odhlas`. Přístup jde odvolat i v Airine
 v Nastavení mezi tokeny („Airine pro Mac“, připojeno přes OAuth).
 
-Když je katalog plný (Solo 2 000, Team 10 000 souborů), lišta to napíše. Nové soubory počkají
+Když je katalog plný (Solo 2 000, Team 10 000 souborů), lišta napíše „Katalog je plný, navyš tarif“. Nové soubory počkají
 na Macu ve frontě, nic se neztratí; nové verze souborů, které už v Airine jsou, projdou dál.
 
 ## Co dělá a co ne

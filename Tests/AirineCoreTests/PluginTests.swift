@@ -427,8 +427,8 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
         guard case .stropSouboru(let s) = ch(403, #"{"stav":"odmitnuto","kod":"strop_souboru","strop":2000,"pocet":2000,"tarif":"solo"}"#),
               case .stropSouboru = ch(422, #"{"stav":"nad_stropem","id":"a"}"#) else { Issue.record("strop"); return }
         #expect(s.strop == 2000 && s.pocet == 2000 && s.tarif == "solo")
-        #expect(s.zprava(ceka: 3).replacingOccurrences(of: "\u{a0}", with: " ") == "Katalog je plný (2 000 souborů, Solo). Na Macu čekají 3 nové soubory, nic se neztratí.")
-        #expect(StropSouboru().zprava(ceka: 7) == "Katalog je plný. Na Macu čeká 7 nových souborů, nic se neztratí.")
+        #expect(s.zprava(ceka: 3).replacingOccurrences(of: "\u{a0}", with: " ") == "Katalog je plný (2 000 souborů, Solo), navyš tarif. Na Macu čekají 3 nové soubory, nic se neztratí.")
+        #expect(StropSouboru().zprava(ceka: 7) == "Katalog je plný, navyš tarif. Na Macu čeká 7 nových souborů, nic se neztratí.")
         #expect(ch(409, #"{"stav":"cizi_zarizeni","id":"a"}"#) == .ciziZarizeni)
         #expect(ch(409, #"{"stav":"cizi_id","id":"a"}"#) == .ciziId)
         #expect(ch(410, #"{"stav":"smazano","id":"a"}"#) == .smazano)

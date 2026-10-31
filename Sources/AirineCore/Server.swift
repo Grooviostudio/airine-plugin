@@ -70,7 +70,7 @@ public struct StropSouboru: Codable, Sendable, Equatable {
             case 2...4: "čekají \(ceka) nové soubory"
             default: "čeká \(ceka) nových souborů"
         }
-        return "Katalog je plný" + (zavorka.isEmpty ? "" : " (\(zavorka))") + ". Na Macu \(ceka), nic se neztratí."
+        return "Katalog je plný" + (zavorka.isEmpty ? "" : " (\(zavorka))") + ", navyš tarif. Na Macu \(ceka), nic se neztratí."
     }
 }
 
