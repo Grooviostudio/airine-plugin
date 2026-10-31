@@ -3,7 +3,7 @@
     "SessionStart": [
       {
         "hooks": [
-          { "type": "command", "command": "/Applications/Airine.app/Contents/MacOS/airine doporuceni --hook", "timeout": 5 }
+          { "type": "command", "command": "A=/Applications/Airine.app/Contents/MacOS/airine; [ -x \"$A\" ] || exit 0; exec \"$A\" doporuceni --hook", "timeout": 5 }
         ]
       }
     ],
@@ -11,7 +11,7 @@
       {
         "matcher": "Write|Edit|MultiEdit",
         "hooks": [
-          { "type": "command", "command": "/Applications/Airine.app/Contents/MacOS/airine nahlas --hook", "timeout": 5 }
+          { "type": "command", "command": "A=/Applications/Airine.app/Contents/MacOS/airine; [ -x \"$A\" ] || exit 0; exec \"$A\" nahlas --hook", "timeout": 5 }
         ]
       }
     ]

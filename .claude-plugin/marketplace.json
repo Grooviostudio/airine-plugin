@@ -1,0 +1,14 @@
+{
+  "name": "airine",
+  "owner": { "name": "Airine", "url": "https://airine.eu" },
+  "metadata": { "description": "Pluginy Airine pro Claude Code." },
+  "plugins": [
+    {
+      "name": "airine",
+      "source": "./claude-plugin",
+      "description": "Na začátku práce doporučí, co k projektu v Airine platí, a MD soubory a skills po změně nahlásí do katalogu. Potřebuje aplikaci Airine pro Mac.",
+      "version": "0.1.0",
+      "homepage": "https://airine.eu"
+    }
+  ]
+}

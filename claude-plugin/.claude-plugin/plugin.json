@@ -2,13 +2,17 @@
   "name": "airine",
   "version": "0.1.0",
   "description": "Airine: na začátku práce doporučí, co k projektu platí, a MD soubory a skills po změně nahlásí do katalogu. Funguje i bez spojení.",
-  "author": { "name": "Groovio" },
+  "author": {
+    "name": "Airine"
+  },
   "homepage": "https://airine.eu",
   "hooks": "./hooks/hooks.json",
   "mcpServers": {
     "airine-mistni": {
       "command": "/Applications/Airine.app/Contents/MacOS/airine",
-      "args": ["mcp"]
+      "args": [
+        "mcp"
+      ]
     }
   }
 }

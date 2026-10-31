@@ -1,5 +1,12 @@
 # Changelog
 
+## 31. 10. 2026
+
+- **Plugin pro Claude Code z marketplace.** Repo je zároveň marketplace
+  (`.claude-plugin/marketplace.json`), instaluje se `/plugin marketplace add Grooviostudio/airine-plugin`
+  a `/plugin install airine@airine`. Hooky bez nainstalované aplikace Airine nic nedělají
+  a nehlásí chybu. Autor pluginu je Airine.
+
 ## 30. 10. 2026
 
 - **Knihovny a sestavení se nehlásí nikdy.** `node_modules`, `vendor`, `bower_components`,
