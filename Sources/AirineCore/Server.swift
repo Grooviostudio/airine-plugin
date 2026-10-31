@@ -39,8 +39,38 @@ public struct VysledekDavky: Codable, Sendable, Equatable {
     public var rozpor: Bool?
     public var ulozeny_otisk: String?
     public var retry_after: Double?
+    public var strop: Int?
+    public var pocet: Int?
+    public var tarif: String?
     public init(id: String, stav: String, otisk: String? = nil, retry_after: Double? = nil) {
         self.id = id; self.stav = stav; self.otisk = otisk; self.retry_after = retry_after
+    }
+}
+
+/// Katalog je plný (Solo 2 000, Team 10 000 souborů): nová karta neprojde,
+/// nová verze existující ano. Hlášení počká ve frontě.
+public struct StropSouboru: Codable, Sendable, Equatable {
+    public var strop: Int?
+    public var pocet: Int?
+    public var tarif: String?
+    public var kdy: Date
+    public init(strop: Int? = nil, pocet: Int? = nil, tarif: String? = nil, kdy: Date = Date()) {
+        self.strop = strop; self.pocet = pocet; self.tarif = tarif; self.kdy = kdy
+    }
+    static func zTela(_ t: [String: Any]) -> StropSouboru {
+        StropSouboru(strop: t["strop"] as? Int, pocet: t["pocet"] as? Int, tarif: t["tarif"] as? String)
+    }
+    /// Věta pro člověka v liště.
+    public func zprava(ceka: Int) -> String {
+        let kolik = strop.map { "\($0.formatted(.number.locale(Locale(identifier: "cs_CZ")))) souborů" }
+        let tarif = self.tarif.map { $0.prefix(1).uppercased() + $0.dropFirst() }
+        let zavorka = [kolik, tarif].compactMap { $0 }.joined(separator: ", ")
+        let ceka = switch ceka {
+            case 1: "čeká 1 nový soubor"
+            case 2...4: "čekají \(ceka) nové soubory"
+            default: "čeká \(ceka) nových souborů"
+        }
+        return "Katalog je plný" + (zavorka.isEmpty ? "" : " (\(zavorka))") + ". Na Macu \(ceka), nic se neztratí."
     }
 }
 
@@ -86,6 +116,7 @@ public enum ChybaServeru: Error, Equatable {
     case smazano                     // 410 u hlášení: karta je v Airine smazaná
     case obsahNeprosel(String)       // obsah se nenahrál; karta jde bez něj
     case davkaVelka                  // 413 u dávky obsahu: soubory po jednom
+    case stropSouboru(StropSouboru)  // strop_souboru: nová karta počká ve frontě
     case jine(Int, String)
 }
 
@@ -149,6 +180,9 @@ public struct HttpAirine: AirineAPI {
     /// Stavy hlášení: tělo nese vždy `{stav, id, …}`, 401 jen kvůli tokenu.
     static func chybaHlaseni(_ data: Data, _ kod: Int) -> ChybaServeru {
         let telo = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        if telo["kod"] as? String == "strop_souboru" || telo["stav"] as? String == "nad_stropem" {
+            return .stropSouboru(.zTela(telo))
+        }
         switch (kod, telo["stav"] as? String) {
         case (403, "bez_prava"): return .bezPravaKarty
         case (403, _): return .neprihlasen

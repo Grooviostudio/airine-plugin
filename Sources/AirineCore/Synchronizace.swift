@@ -32,6 +32,8 @@ public struct Synchronizace: Sendable {
         public var obsahu = 0                    // hlášení, která odešla i s obsahem
         public var bezObsahu: [String] = []      // obsah neprošel (strop, kvóta), odešla jen karta
         public var zmizelo = 0                   // místa, která server přestal počítat
+        public var strop: StropSouboru?          // katalog je plný: nové karty čekají ve frontě
+        public var cekaNadStropem = 0
     }
 
     /// Běh se vším, co potřebuje lišta i příkaz: když server řekne, že uuid
@@ -72,7 +74,24 @@ public struct Synchronizace: Sendable {
         if let s = n.stropy { try kopie.nastavStav("stropy_davky", s) }
     }
 
+    /// Jak dlouho po odpovědi „strop_souboru“ nové karty jen čekají.
+    static let stropPo: TimeInterval = 6 * 3600
+
+    /// Nad stropem čeká jen nová karta, nová verze existující projde.
+    func odlozit(_ p: Kopie.Polozka, _ v: Vysledek) throws -> Bool {
+        guard v.strop != nil else { return false }
+        return try kopie.karta(p.hlaseni.id) == nil
+    }
+
     func odesliFrontu(_ v: inout Vysledek) async throws {
+        let ulozeny = try kopie.stav("strop_souboru", StropSouboru.self)
+        if let u = ulozeny, Date().timeIntervalSince(u.kdy) < Self.stropPo { v.strop = u }
+        try await odesliFrontuDo(&v)
+        if v.strop == nil, ulozeny != nil { try kopie.smazStav("strop_souboru") }
+        if v.strop != nil { v.cekaNadStropem = try kopie.fronta().filter { try odlozit($0, v) }.count }
+    }
+
+    func odesliFrontuDo(_ v: inout Vysledek) async throws {
         let fronta = try kopie.fronta()
         var i = 0
         var poJednom = false        // server dávku nezná nebo ji odmítl celou
@@ -82,7 +101,7 @@ public struct Synchronizace: Sendable {
             if !poJednom {
                 var davka: [(Kopie.Polozka, SouborDavky)] = []
                 var bajty = 0, j = i
-                while j < fronta.count, davka.count < strop.souboru, let f = souborDavky(fronta[j].hlaseni),
+                while j < fronta.count, davka.count < strop.souboru, !(try odlozit(fronta[j], v)), let f = souborDavky(fronta[j].hlaseni),
                       bajty + f.obsah.utf8.count + 4096 <= strop.bajtu {
                     davka.append((fronta[j], f)); bajty += f.obsah.utf8.count + 4096; j += 1
                 }
@@ -94,6 +113,7 @@ public struct Synchronizace: Sendable {
                     }
                 }
             }
+            if try odlozit(fronta[i], v) { i += 1; continue }
             guard try await odesliJedno(fronta[i], &v) else { return }
             i += 1
         }
@@ -149,6 +169,8 @@ public struct Synchronizace: Sendable {
                     pretizene.append(polozka); cekat = max(cekat, r.retry_after ?? 2)
                 case "smazano": _ = try vyridChybu(p, .smazano, &v)
                 case "bez_prava": _ = try vyridChybu(p, .bezPravaKarty, &v)
+                case "nad_stropem":
+                    _ = try vyridChybu(p, .stropSouboru(StropSouboru(strop: r.strop, pocet: r.pocet, tarif: r.tarif)), &v)
                 default: jednotlive.append(p)           // neplatne, chyba, neznámý stav: ještě jednou po jednom
                 }
             }
@@ -202,6 +224,11 @@ public struct Synchronizace: Sendable {
         case .smazano:
             try kopie.oznacSmazanou(p.hlaseni)
             v.smazanych += 1
+        case .stropSouboru(var s):
+            // Hlášení zůstane ve frontě, jak je: nic se nezahodí ani neodmítne.
+            s.kdy = Date()
+            try kopie.nastavStav("strop_souboru", s)
+            v.strop = s
         case .ciziZarizeni:
             v.ciziZarizeni = true
             return false

@@ -85,6 +85,8 @@ case "sync":
     let tise = prepinac("--tise")
     let (kopie, _) = otevri()
     guard let t = token() else { if tise { exit(0) }; chyba("Nejsi přihlášený: airine prihlas") }
+    // Ruční sync zkusí nové soubory hned, i když byl katalog před chvílí plný.
+    if !tise { try? kopie.smazStav("strop_souboru") }
     do {
         let v = try await Synchronizace.spust(domov: domov, kopie: kopie) { HttpAirine(nastaveni: $0, token: t) }
         if !tise {
@@ -94,6 +96,7 @@ case "sync":
             if v.smazanych > 0 { print("Karty smazané v Airine: \(v.smazanych), dál se nehlásí.") }
             if !v.rozpory.isEmpty { print("Rozpory: \(v.rozpory.joined(separator: ", "))") }
             if v.neprihlasen { print("Token neplatí nebo nemáš modul Znalosti.") }
+            if let s = v.strop { print(s.zprava(ceka: v.cekaNadStropem)) }
         }
     } catch { if !tise { chyba("Synchronizace selhala: \(error)") } }
 

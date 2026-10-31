@@ -48,6 +48,10 @@ actor MockServer: AirineAPI {
         guard online else { throw ChybaServeru.bezSpojeni }
         if let z = zarizeni, ciziZarizeni.contains(z) { throw ChybaServeru.ciziZarizeni }
         if smazane.contains(h.id) { throw ChybaServeru.smazano }
+        if let n = strop, karty[h.id] == nil, verze[h.id] == nil {
+            pokusyNadStropem += 1
+            if karty.count >= n { throw ChybaServeru.stropSouboru(StropSouboru(strop: n, pocet: karty.count, tarif: "solo")) }
+        }
         if h.name == nil || h.name!.isEmpty { throw ChybaServeru.odmitnuto(Odmitnuti(chyby: [ChybaPole(pole: "name", zprava: "chybí", kod: "chybi")])) }
         if verze[h.id]?.contains(h.otisk) == true { return OdpovedHlaseni(stav: .uz_prijato, id: h.id, otisk: h.otisk) }
         if karty[h.id] == nil, let jine = prevzit[h.otisk] { return OdpovedHlaseni(stav: .uz_prijato, id: jine, otisk: h.otisk) }
@@ -67,6 +71,11 @@ actor MockServer: AirineAPI {
     }
 
     func pocetVerzi(_ id: String) -> Int { verze[id]?.count ?? 0 }
+
+    /// Strop souborů workspace: nová karta nad ním dostane `strop_souboru`.
+    var strop: Int? = nil
+    var pokusyNadStropem = 0                     // pokusy o novou kartu, když je strop zapnutý
+    func nastav(strop n: Int?) { strop = n; pokusyNadStropem = 0 }
 
     /// `/api/katalog/mista/zmizela`; `nil` = server ji ještě nemá (404).
     var zmizelaPrijata: [ZmizeleMisto]? = nil
@@ -128,6 +137,10 @@ actor MockServer: AirineAPI {
                 let o = try await nahrajObsah(f.hlaseni, data: Data(f.obsah.utf8), mime: f.mime, zarizeni: nil)
                 v.append(VysledekDavky(id: o.id, stav: o.stav.rawValue, otisk: o.otisk))
             } catch ChybaServeru.bezPravaKarty { v.append(VysledekDavky(id: f.hlaseni.id, stav: "bez_prava")) }
+            catch ChybaServeru.stropSouboru(let s) {
+                var r = VysledekDavky(id: f.hlaseni.id, stav: "nad_stropem"); r.strop = s.strop; r.pocet = s.pocet; r.tarif = s.tarif
+                v.append(r)
+            }
             catch { v.append(VysledekDavky(id: f.hlaseni.id, stav: "neplatne")) }
         }
         return v
@@ -411,6 +424,11 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
         func ch(_ kod: Int, _ json: String) -> ChybaServeru { HttpAirine.chybaHlaseni(Data(json.utf8), kod) }
         #expect(ch(403, #"{"stav":"bez_prava","id":"a"}"#) == .bezPravaKarty)
         #expect(ch(403, "{}") == .neprihlasen)
+        guard case .stropSouboru(let s) = ch(403, #"{"stav":"odmitnuto","kod":"strop_souboru","strop":2000,"pocet":2000,"tarif":"solo"}"#),
+              case .stropSouboru = ch(422, #"{"stav":"nad_stropem","id":"a"}"#) else { Issue.record("strop"); return }
+        #expect(s.strop == 2000 && s.pocet == 2000 && s.tarif == "solo")
+        #expect(s.zprava(ceka: 3).replacingOccurrences(of: "\u{a0}", with: " ") == "Katalog je plný (2 000 souborů, Solo). Na Macu čekají 3 nové soubory, nic se neztratí.")
+        #expect(StropSouboru().zprava(ceka: 7) == "Katalog je plný. Na Macu čeká 7 nových souborů, nic se neztratí.")
         #expect(ch(409, #"{"stav":"cizi_zarizeni","id":"a"}"#) == .ciziZarizeni)
         #expect(ch(409, #"{"stav":"cizi_id","id":"a"}"#) == .ciziId)
         #expect(ch(410, #"{"stav":"smazano","id":"a"}"#) == .smazano)
@@ -1408,5 +1426,50 @@ final class PocitaneTajemstvi: UlozisteTajemstvi, @unchecked Sendable {
         let v = try await Synchronizace(kopie: k, api: server).probehni()
         let jednotlive = await server.jednotliveObsahu
         #expect(v.odeslano == 2 && v.obsahu == 2 && jednotlive == 2)
+    }
+
+    @Test func nadStropemNoveCekajiVerzeProjdou() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        let a = try soubor(d, "a.md", "---\nname: a\ndescription: D\nairine:\n  typ: brief\n  id: a1\n---\nv1\n")
+        _ = try Nahlasovani(kopie: k).nahlas(cesta: a)
+        _ = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(try k.karta("a1") != nil)
+
+        await server.nastav(strop: 1)
+        for j in ["b", "c"] {
+            _ = try Nahlasovani(kopie: k).nahlas(cesta: try soubor(d, "\(j).md", "---\nname: \(j)\ndescription: D\nairine:\n  typ: brief\n---\nText \(j)\n"))
+        }
+        try "---\nname: a\ndescription: D\nairine:\n  typ: brief\n  id: a1\n---\nv2\n".write(toFile: a, atomically: true, encoding: .utf8)
+        _ = try Nahlasovani(kopie: k).nahlas(cesta: a)
+        let v = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(v.odeslano == 1 && v.odmitnuto == 0 && v.online, "nová verze existující karty projde")
+        #expect(v.strop?.strop == 1 && v.cekaNadStropem == 2)
+        #expect(try k.fronta().count == 2, "nic se nezahodí ani neodmítne")
+        #expect(await server.pokusyNadStropem == 1, "po první odpovědi se další nová karta už nezkouší")
+
+        let w = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(w.cekaNadStropem == 2 && w.strop != nil)
+        #expect(await server.pokusyNadStropem == 1, "do 6 hodin se nové karty neposílají")
+
+        // Po 6 hodinách (tarif mezitím vyšší) projdou a stav stropu zmizí.
+        try k.nastavStav("strop_souboru", StropSouboru(strop: 1, kdy: Date().addingTimeInterval(-7 * 3600)))
+        await server.nastav(strop: 10)
+        let x = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(x.odeslano == 2 && x.strop == nil && x.cekaNadStropem == 0)
+        #expect(try k.fronta().isEmpty)
+        #expect(try k.stav("strop_souboru", StropSouboru.self) == nil)
+    }
+
+    @Test func nadStropemVDavce() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        await server.zapniDavky(); await server.nastav(strop: 0)
+        for j in ["a", "b", "c"] {
+            _ = try Nahlasovani(kopie: k).nahlas(cesta: try soubor(d, "\(j).md", "---\nname: \(j)\ndescription: D\nairine:\n  typ: brief\n---\nText \(j)\n"))
+        }
+        let v = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(v.odeslano == 0 && v.odmitnuto == 0 && v.online)
+        #expect(v.strop?.tarif == "solo" && v.cekaNadStropem == 3)
+        #expect(try k.fronta().count == 3)
+        #expect(await server.jednotliveObsahu == 0, "nad stropem se po jednom nezkouší")
     }
 }

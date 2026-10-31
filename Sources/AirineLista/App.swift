@@ -13,6 +13,8 @@ final class Stav: ObservableObject {
     @Published var online = true
     @Published var prihlasen = false
     @Published var rozpory: [String] = []
+    /// Katalog je plný: věta pro člověka, nové soubory čekají ve frontě.
+    @Published var strop: String?
     @Published var posilatObsah = true
     @Published var slozky: [String] = []
     /// Dialog se složkami se po přihlášení ukáže jednou za běh, ne každou minutu.
@@ -103,8 +105,11 @@ final class Stav: ObservableObject {
         if v.zarazeno > 0 || v.zmizelo > 0 { Task { await synchronizuj() } }
     }
 
-    func synchronizuj() async {
+    /// `rucne`: tlačítko v liště zkusí nové soubory hned, i když server
+    /// před chvílí řekl, že je katalog plný (třeba po změně tarifu).
+    func synchronizuj(rucne: Bool = false) async {
         guard let kopie else { return }
+        if rucne { try? kopie.smazStav("strop_souboru") }
         guard let t = token() else { prihlasen = false; obnov(); return }
         prihlasen = true
         if slozky.isEmpty && !dotazanoNaSlozky {
@@ -125,6 +130,7 @@ final class Stav: ObservableObject {
             // Token zrušený nebo vyměněný v terminálu: příště ho přečti znovu.
             if v.neprihlasen { Tajemstvi.vychozi(domov).zapomen("token") }
             rozpory = v.rozpory
+            strop = v.strop?.zprava(ceka: v.cekaNadStropem)
         }
         obnov()
     }
@@ -142,12 +148,13 @@ struct AirineLista: App {
                 if stav.fronta > 0 { Text("Čeká na odeslání: \(stav.fronta)") }
                 if stav.odmitnuto > 0 { Text("Odmítnutá hlášení: \(stav.odmitnuto)") }
                 if !stav.rozpory.isEmpty { Text("Rozpory: \(stav.rozpory.count)") }
+                if let s = stav.strop { Text(s).fixedSize(horizontal: false, vertical: true).frame(maxWidth: 280, alignment: .leading) }
                 Divider()
                 Text(stav.slozky.isEmpty ? "Airine zatím nebere z žádné složky"
                      : "Airine bere z: " + stav.slozky.map { ($0 as NSString).abbreviatingWithTildeInPath }.joined(separator: ", "))
                 Button(stav.slozky.isEmpty ? "Vybrat složky…" : "Změnit složky…") { stav.vyberSlozky() }
                 Toggle("Posílat obsah souborů", isOn: Binding(get: { stav.posilatObsah }, set: { stav.nastavObsah($0) }))
-                Button("Synchronizovat teď") { Task { await stav.synchronizuj() } }
+                Button("Synchronizovat teď") { Task { await stav.synchronizuj(rucne: true) } }
                 Button("Ukončit") { NSApplication.shared.terminate(nil) }
             }
             .padding(8)
