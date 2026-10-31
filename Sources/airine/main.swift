@@ -9,7 +9,6 @@ let napoveda = """
 airine — plugin Airine pro Claude Code a Cursor
 
   airine prihlas [--server URL]   osobní token ze stdin do Klíčenky
-  airine prihlas --prohlizec      přihlášení v prohlížeči (jako tlačítko v liště)
   airine odhlas                   smaže token z Klíčenky
   airine sync                     odešle frontu a stáhne změny katalogu
   airine stav                     poslední synchronizace, fronta, odmítnutá hlášení
@@ -83,16 +82,9 @@ switch prikaz {
 case "prihlas":
     var (_, n) = otevri()
     if let s = volba("--server") { n.server = s; try? n.uloz(domov) }
+    // Token z OAuth server zatím pouští jen na /mcp, katalog by ho odmítl.
     if prepinac("--prohlizec") {
-        print("Otevírám prohlížeč s přihlášením do Airine…")
-        do {
-            try await Prihlaseni.prihlas(server: n.server, tajemstvi: tajemstvi) { u in
-                let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/open"); p.arguments = [u.absoluteString]
-                try? p.run()
-            }
-        } catch { chyba("Přihlášení se nepovedlo: \(error)") }
-        print("Přihlášeno. Server: \(n.server)")
-        exit(0)
+        chyba("Přihlášení v prohlížeči zatím nejde. Pošli osobní token z Airine na stdin: airine prihlas")
     }
     // Token jen ze stdin, nikdy z argumentu (ten je vidět v `ps` a v historii).
     let token = String(decoding: FileHandle.standardInput.readDataToEndOfFile(), as: UTF8.self)

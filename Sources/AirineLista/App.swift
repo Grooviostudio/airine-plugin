@@ -188,10 +188,11 @@ struct AirineLista: App {
         MenuBarExtra {
             VStack(alignment: .leading, spacing: 6) {
                 Text(stav.prihlasen ? (stav.online ? "Airine: připojeno" : "Airine neodpovídá, pracuju z místní kopie") : "Nepřihlášeno")
+                // Přihlášení přes prohlížeč čeká na server: token z OAuth zatím
+                // platí jen pro /mcp, ne pro /api/katalog. Do té doby osobní token.
                 if !stav.prihlasen {
-                    Button(stav.prihlasuje ? "Dokonči přihlášení v prohlížeči…" : "Přihlásit se…") { stav.prihlas() }
-                        .disabled(stav.prihlasuje)
-                    if let c = stav.chybaPrihlaseni { Text(c) }
+                    Text("Přihlas se osobním tokenem z Airine (Nastavení → Účet → API tokeny): airine prihlas")
+                        .fixedSize(horizontal: false, vertical: true).frame(maxWidth: 280, alignment: .leading)
                 }
                 Text("Poslední synchronizace: " + (stav.posledni.map { $0.formatted(date: .omitted, time: .shortened) } ?? "nikdy"))
                 if stav.fronta > 0 { Text("Čeká na odeslání: \(stav.fronta)") }

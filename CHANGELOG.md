@@ -2,6 +2,9 @@
 
 ## 31. 10. 2026
 
+- **Přihlášení přes prohlížeč vypnuté.** Server token z OAuth zatím pouští jen na `/mcp`,
+  katalog by ho odmítl. Lišta místo tlačítka radí osobní token, `airine prihlas --prohlizec`
+  skončí srozumitelnou chybou. Kód přihlášení zůstává pro chvíli, kdy to server dovolí.
 - **Přihlášení bez terminálu.** V liště „Přihlásit se…“ (nebo `airine prihlas --prohlizec`)
   otevře prohlížeč: OAuth s PKCE, který server už má pro MCP. Lišta si zaregistruje
   veřejného klienta „Airine pro Mac“ s návratem na `http://127.0.0.1:<port>/prihlaseni`
