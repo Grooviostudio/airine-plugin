@@ -4,7 +4,31 @@ Plugin pro Claude Code a Cursor a malá aplikace v liště macOS. Na začátku p
 agentovi řekne, které podklady a skills k projektu v Airine platí, a MD soubory
 a skills po změně nahlásí do katalogu Airine. Funguje i bez spojení.
 
-**Stav: kostra, netestováno na skutečném účtu.** Neinstaluj mimo vývoj.
+**Stav: beta.** Běží denně na jednom Macu se skutečným katalogem. Podepsaná aplikace ke stažení
+zatím není; do prvního vydání jde jen sestavení ze zdrojů (níž).
+
+## Instalace
+
+1. Stáhni `Airine.dmg` z [Releases](https://github.com/Grooviostudio/airine-plugin/releases)
+   a přetáhni Airine do Aplikací. *(Připravujeme, první vydání ještě není.)*
+2. Spusť Airine. V liště nahoře se objeví ikona knih.
+3. V liště klikni na **Přihlásit se…**. Otevře se prohlížeč: přihlas se do Airine, vyber
+   workspace a povol přístup. Token si lišta uloží do Klíčenky, terminál není potřeba.
+4. Lišta se zeptá, **ze kterých složek** má Airine brát MD dokumenty a skills. Mimo ně neodejde nic.
+5. Plugin pro Claude Code (doporučení na začátku práce a hlášení po změně souboru):
+
+   ```
+   /plugin marketplace add Grooviostudio/airine-plugin
+   /plugin install airine@airine
+   ```
+
+   Plugin volá aplikaci v `/Applications/Airine.app`. Bez ní nic nedělá a nehlásí chybu.
+
+Odhlášení je v liště (**Odhlásit**) nebo `airine odhlas`. Přístup jde odvolat i v Airine
+v Nastavení mezi tokeny („Airine pro Mac“, připojeno přes OAuth).
+
+Když je katalog plný (Solo 2 000, Team 10 000 souborů), lišta to napíše. Nové soubory počkají
+na Macu ve frontě, nic se neztratí; nové verze souborů, které už v Airine jsou, projdou dál.
 
 ## Co dělá a co ne
 
@@ -53,9 +77,10 @@ a skills po změně nahlásí do katalogu Airine. Funguje i bez spojení.
 | Cesta | Co to je |
 |---|---|
 | `Sources/AirineCore` | Místní kopie (SQLite), fronta hlášení, synchronizace, hlavičky, doporučení, místní MCP |
-| `Sources/airine` | Příkaz `airine`: hooky, `sync`, `stav`, `propoj`, `vyres`, `slozky`, `porovnej`, `obsah`, `vynech`, `nahraj-obsah`, `mcp` |
+| `Sources/airine` | Příkaz `airine`: hooky, `prihlas`, `odhlas`, `sync`, `stav`, `propoj`, `vyres`, `slozky`, `porovnej`, `obsah`, `vynech`, `nahraj-obsah`, `mcp` |
 | `Sources/AirineLista` | Aplikace v liště (SwiftUI `MenuBarExtra`) |
 | `claude-plugin` | Plugin pro Claude Code: hooky SessionStart a PostToolUse, MCP server `airine mcp` |
+| `.claude-plugin/marketplace.json` | Repo jako marketplace Claude Code (`/plugin marketplace add`) |
 
 ## Sestavení a testy
 
@@ -79,7 +104,9 @@ AIRINE_KLICE=soubor swift test -Xswiftc -F$F -Xlinker -F$F -Xlinker -rpath -Xlin
 ## Rozhraní serveru
 
 Plugin mluví s Airine přes `/api/katalog/*` s osobním tokenem (`x-api-key`) a hlavičkou
-zařízení `x-airine-zarizeni`. Hlášení se páruje podle (id, otisk), takže opakované
+zařízení `x-airine-zarizeni`. Token je buď z přihlášení v prohlížeči (OAuth s PKCE, návrat
+na `http://127.0.0.1:<port>/prihlaseni`, token na hodinu, obnova na 90 dní), nebo osobní
+token z Airine předaný `airine prihlas` na stdin (pro vývoj a skripty). Hlášení se páruje podle (id, otisk), takže opakované
 odeslání téže verze nic nezdvojí. Souběžná změna ze dvou zařízení skončí jako rozpor,
 nic se tiše nepřepíše.
 

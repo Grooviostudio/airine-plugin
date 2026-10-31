@@ -1,9 +1,8 @@
 import AirineCore
 import SwiftUI
 
-// Aplikace v liště: drží synchronizaci (každou minutu a hned po hlášení),
-// hlídá vybrané složky (FSEvents) a ukazuje stav a rozpory. KOSTRA —
-// přihlášení, souhlas s měřením a připojení Cursoru přibudou v dalších krocích.
+// Aplikace v liště: přihlášení přes prohlížeč, synchronizace (každou minutu
+// a hned po hlášení), hlídání vybraných složek (FSEvents), stav a rozpory.
 
 @MainActor
 final class Stav: ObservableObject {
@@ -15,6 +14,11 @@ final class Stav: ObservableObject {
     @Published var rozpory: [String] = []
     /// Katalog je plný: věta pro člověka, nové soubory čekají ve frontě.
     @Published var strop: String?
+    /// Přihlášení přes prohlížeč právě běží, nebo skončilo chybou.
+    @Published var prihlasuje = false
+    @Published var chybaPrihlaseni: String?
+    /// Přihlášeno přes prohlížeč (OAuth), ne tokenem z terminálu.
+    @Published var presOAuth = false
     @Published var posilatObsah = true
     @Published var slozky: [String] = []
     /// Dialog se složkami se po přihlášení ukáže jednou za běh, ne každou minutu.
@@ -52,6 +56,7 @@ final class Stav: ObservableObject {
         posilatObsah = n?.posilatObsah ?? true
         slozky = n?.slozky ?? []
         hlidej()
+        presOAuth = Prihlaseni.udaje(Tajemstvi.vychozi(domov)) != nil
         let f = (try? kopie.fronta(vcetneOdmitnutych: true)) ?? []
         fronta = f.filter { $0.odmitnuto == nil }.count
         odmitnuto = f.count - fronta
@@ -63,6 +68,36 @@ final class Stav: ObservableObject {
         n.posilatObsah = ano
         try? n.uloz(domov)
         posilatObsah = ano
+    }
+
+    /// Prohlížeč s přihlášením do Airine; token si lišta vezme ze smyčky
+    /// na 127.0.0.1 a uloží do Klíčenky. Po deseti minutách bez návratu vzdá.
+    func prihlas() {
+        guard !prihlasuje, let n = try? Nastaveni.nacti(domov) else { return }
+        prihlasuje = true; chybaPrihlaseni = nil
+        Task {
+            do {
+                try await Prihlaseni.prihlas(server: n.server, tajemstvi: Tajemstvi.vychozi(domov)) { u in
+                    DispatchQueue.main.async { NSWorkspace.shared.open(u) }
+                }
+                prihlasuje = false
+                await synchronizuj()
+            } catch {
+                prihlasuje = false
+                chybaPrihlaseni = switch error {
+                case ChybaServeru.bezSpojeni: "Airine neodpovídá. Zkus to za chvíli."
+                case ChybaPrihlaseni.odmitnuto("timeout"): "Přihlášení vypršelo. Zkus to znovu."
+                case ChybaPrihlaseni.odmitnuto: "Přihlášení bylo zamítnuto."
+                default: "Přihlášení se nepovedlo (\(error))."
+                }
+            }
+        }
+    }
+
+    func odhlas() {
+        Prihlaseni.odhlas(Tajemstvi.vychozi(domov))
+        prihlasen = false
+        obnov()
     }
 
     /// Finder: ze kterých složek Airine bere MD a skills. Výběr nahradí
@@ -110,6 +145,9 @@ final class Stav: ObservableObject {
     func synchronizuj(rucne: Bool = false) async {
         guard let kopie else { return }
         if rucne { try? kopie.smazStav("strop_souboru") }
+        if let n = try? Nastaveni.nacti(domov) {
+            await Prihlaseni.obnovJeTreba(domov: domov, tajemstvi: Tajemstvi.vychozi(domov), server: n.server)
+        }
         guard let t = token() else { prihlasen = false; obnov(); return }
         prihlasen = true
         if slozky.isEmpty && !dotazanoNaSlozky {
@@ -128,7 +166,13 @@ final class Stav: ObservableObject {
             online = v.online
             prihlasen = !v.neprihlasen
             // Token zrušený nebo vyměněný v terminálu: příště ho přečti znovu.
-            if v.neprihlasen { Tajemstvi.vychozi(domov).zapomen("token") }
+            // Přihlášení přes prohlížeč si zkusí vzít nový token hned.
+            if v.neprihlasen {
+                Tajemstvi.vychozi(domov).zapomen("token")
+                if let n = try? Nastaveni.nacti(domov), presOAuth {
+                    await Prihlaseni.obnovJeTreba(domov: domov, tajemstvi: Tajemstvi.vychozi(domov), server: n.server, vynutit: true)
+                }
+            }
             rozpory = v.rozpory
             strop = v.strop?.zprava(ceka: v.cekaNadStropem)
         }
@@ -144,6 +188,11 @@ struct AirineLista: App {
         MenuBarExtra {
             VStack(alignment: .leading, spacing: 6) {
                 Text(stav.prihlasen ? (stav.online ? "Airine: připojeno" : "Airine neodpovídá, pracuju z místní kopie") : "Nepřihlášeno")
+                if !stav.prihlasen {
+                    Button(stav.prihlasuje ? "Dokonči přihlášení v prohlížeči…" : "Přihlásit se…") { stav.prihlas() }
+                        .disabled(stav.prihlasuje)
+                    if let c = stav.chybaPrihlaseni { Text(c) }
+                }
                 Text("Poslední synchronizace: " + (stav.posledni.map { $0.formatted(date: .omitted, time: .shortened) } ?? "nikdy"))
                 if stav.fronta > 0 { Text("Čeká na odeslání: \(stav.fronta)") }
                 if stav.odmitnuto > 0 { Text("Odmítnutá hlášení: \(stav.odmitnuto)") }
@@ -155,6 +204,7 @@ struct AirineLista: App {
                 Button(stav.slozky.isEmpty ? "Vybrat složky…" : "Změnit složky…") { stav.vyberSlozky() }
                 Toggle("Posílat obsah souborů", isOn: Binding(get: { stav.posilatObsah }, set: { stav.nastavObsah($0) }))
                 Button("Synchronizovat teď") { Task { await stav.synchronizuj(rucne: true) } }
+                if stav.prihlasen && stav.presOAuth { Button("Odhlásit") { stav.odhlas() } }
                 Button("Ukončit") { NSApplication.shared.terminate(nil) }
             }
             .padding(8)

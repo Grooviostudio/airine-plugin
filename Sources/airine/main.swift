@@ -9,6 +9,8 @@ let napoveda = """
 airine — plugin Airine pro Claude Code a Cursor
 
   airine prihlas [--server URL]   osobní token ze stdin do Klíčenky
+  airine prihlas --prohlizec      přihlášení v prohlížeči (jako tlačítko v liště)
+  airine odhlas                   smaže token z Klíčenky
   airine sync                     odešle frontu a stáhne změny katalogu
   airine stav                     poslední synchronizace, fronta, odmítnutá hlášení
   airine propoj <projekt_id> [--slozka CESTA]
@@ -47,6 +49,13 @@ func stdinJson() -> [String: Any] {
 let domov = Domov()
 let tajemstvi = Tajemstvi.vychozi(domov)
 
+// Token z přihlášení v prohlížeči platí hodinu: před prací se serverem se
+// obnoví. Hooky na síť nečekají (odesílá `airine sync` na pozadí).
+if !argumenty.contains("--hook"), !["mcp", "prihlas", "odhlas"].contains(argumenty.first ?? ""),
+   let n = try? Nastaveni.nacti(domov) {
+    await Prihlaseni.obnovJeTreba(domov: domov, tajemstvi: tajemstvi, server: n.server)
+}
+
 @MainActor func otevri() -> (Kopie, Nastaveni) {
     do { return (try Kopie(domov: domov, klic: Tajemstvi.klicKopie(tajemstvi)), try Nastaveni.nacti(domov)) }
     catch { chyba("Místní kopii nejde otevřít: \(error)") }
@@ -74,12 +83,29 @@ switch prikaz {
 case "prihlas":
     var (_, n) = otevri()
     if let s = volba("--server") { n.server = s; try? n.uloz(domov) }
+    if prepinac("--prohlizec") {
+        print("Otevírám prohlížeč s přihlášením do Airine…")
+        do {
+            try await Prihlaseni.prihlas(server: n.server, tajemstvi: tajemstvi) { u in
+                let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/open"); p.arguments = [u.absoluteString]
+                try? p.run()
+            }
+        } catch { chyba("Přihlášení se nepovedlo: \(error)") }
+        print("Přihlášeno. Server: \(n.server)")
+        exit(0)
+    }
     // Token jen ze stdin, nikdy z argumentu (ten je vidět v `ps` a v historii).
     let token = String(decoding: FileHandle.standardInput.readDataToEndOfFile(), as: UTF8.self)
         .trimmingCharacters(in: .whitespacesAndNewlines)
     guard token.hasPrefix("airine_") else { chyba("Čekám osobní token Airine (airine_…) na stdin.") }
+    // Osobní token nahradí přihlášení z prohlížeče, ať ho obnova nepřepíše.
+    try? tajemstvi.smaz("oauth")
     do { try tajemstvi.zapis("token", Data(token.utf8)) } catch { chyba("Token nejde uložit: \(error)") }
     print("Token uložen. Server: \(n.server)")
+
+case "odhlas":
+    Prihlaseni.odhlas(tajemstvi)
+    print("Token je pryč z Klíčenky. Lišta i hooky přestanou posílat do Airine.")
 
 case "sync":
     let tise = prepinac("--tise")

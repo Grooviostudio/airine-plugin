@@ -2,6 +2,15 @@
 
 ## 31. 10. 2026
 
+- **Přihlášení bez terminálu.** V liště „Přihlásit se…“ (nebo `airine prihlas --prohlizec`)
+  otevře prohlížeč: OAuth s PKCE, který server už má pro MCP. Lišta si zaregistruje
+  veřejného klienta „Airine pro Mac“ s návratem na `http://127.0.0.1:<port>/prihlaseni`
+  a vymění kód za token. Token platí hodinu a před koncem nebo po 401 se obnoví. Obnova
+  je pod zámkem souboru, aby se lišta a hook nepřetahovaly o jeden obnovovací token.
+  Zamítnutá obnova (přístup odvolaný v Airine) znamená odhlášení, výpadek nic nemění.
+  `airine odhlas` a „Odhlásit“ v liště token smažou. Osobní token z `airine prihlas`
+  platí dál a přihlášení z prohlížeče nahradí.
+- README: skutečný stav a instalace pro zákazníka.
 - **Plugin pro Claude Code z marketplace.** Repo je zároveň marketplace
   (`.claude-plugin/marketplace.json`), instaluje se `/plugin marketplace add Grooviostudio/airine-plugin`
   a `/plugin install airine@airine`. Hooky bez nainstalované aplikace Airine nic nedělají
