@@ -50,3 +50,13 @@ a agent dostane návrh.
 Soubor, který už do Airine dostal import z prohlížeče, plugin nezná podle id. Server ho
 podle člena, otisku a cesty převezme (`prevzato`) a plugin si id přepíše na existující
 kartu, takže nevznikne duplicita.
+
+## Známá omezení
+
+- **Trvalá chyba serveru (5xx) zastaví frontu.** Odpověď 5xx plugin bere jako výpadek
+  spojení (`ChybaServeru.bezSpojeni`): hlášení zůstane ve frontě, do pokusů se nepočítá
+  a zbytek fronty čeká, aby se nezměnilo pořadí. Při krátkém výpadku je to správně. Když
+  ale server jedno konkrétní hlášení odmítá s 5xx pořád (chyba na straně serveru), fronta
+  za ním stojí, dokud se server neopraví. Ukáže se to jako „bez spojení“. Plugin to zatím
+  neodliší a hlášení po `limitPokusu` neodloží, jak to dělá u ostatních kódů. Náprava je
+  oprava na serveru. Rozlišit opakované 5xx u téhož hlášení od výpadku je otevřený úkol.
