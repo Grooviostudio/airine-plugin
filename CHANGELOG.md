@@ -1,5 +1,23 @@
 # Changelog
 
+## 7. 11. 2026
+
+- **Strop v dávce obsahu už neodhlásí.** 403 z `/obsah-davka` se rozlišuje jako u hlášení:
+  `strop_souboru` / `nad_stropem` je plný katalog, `bez_prava` karta bez práva, jinak
+  nepřihlášen. Dřív byl každý 403 „nepřihlášen“ a plný katalog zastavil celou frontu.
+- **Jedno hlášení nezasekne frontu.** Neznámá odpověď serveru (404, 413, nečekané tělo)
+  hlášení přeskočí a zbytek fronty i stažení změn proběhne. Po 5 pokusech se hlášení odmítne
+  s vysvětlením (`kod: opakovane`), agent i lišta ho uvidí jako odmítnuté.
+- **Výpadek se do pokusů nepočítá.** Týden bez sítě hlášení neodmítne.
+- **Smazaný soubor nepošle starou cestu.** Čekající hlášení smazaného souboru se zahodí.
+  Karta, kterou server ještě nezná, nedostane zmizelé místo (server by ho odmítl a s ním
+  celou dávku míst); u známé karty se místo oznámí jako dřív.
+- **`co_plati` z čerstvé kopie.** Kopie starší než 5 minut se před odpovědí zkusí
+  synchronizovat. Bez spojení odpoví kopie, jaká je.
+- **`nahlas_soubor` neříká „Nahlášeno“ u odmítnutého hlášení.** Odmítnuté hlášení vypíše
+  chyby a radu opravit hlavičku, čekající ve frontě „Uloženo do fronty“.
+- README: testy s Command Line Tools potřebují i `-plugin-path` k makrům Testing.
+
 ## 31. 10. 2026
 
 - **Přihlášení přes prohlížeč vypnuté.** Server token z OAuth zatím pouští jen na `/mcp`,

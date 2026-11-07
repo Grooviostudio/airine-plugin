@@ -18,6 +18,9 @@ actor MockServer: AirineAPI {
     var smazane: Set<String> = []
     func nastavCizi(_ z: String) { ciziZarizeni.insert(z) }
     func smaz(_ id: String) { smazane.insert(id) }
+    /// Hlášení karty `id` dostane tuhle chybu (např. 404 nebo 422), dokud se nezruší.
+    var chybaPro: [String: ChybaServeru] = [:]
+    func nastav(chyba: ChybaServeru?, pro id: String) { chybaPro[id] = chyba }
 
     func nastav(online: Bool) { self.online = online }
     func odeberPravo(_ id: String) { bezPrava.insert(id); zmena(id) }
@@ -48,6 +51,7 @@ actor MockServer: AirineAPI {
         guard online else { throw ChybaServeru.bezSpojeni }
         if let z = zarizeni, ciziZarizeni.contains(z) { throw ChybaServeru.ciziZarizeni }
         if smazane.contains(h.id) { throw ChybaServeru.smazano }
+        if let e = chybaPro[h.id] { throw e }
         if let n = strop, karty[h.id] == nil, verze[h.id] == nil {
             pokusyNadStropem += 1
             if karty.count >= n { throw ChybaServeru.stropSouboru(StropSouboru(strop: n, pocet: karty.count, tarif: "solo")) }
@@ -1067,6 +1071,19 @@ final class Podstrceny: URLProtocol, @unchecked Sendable {
         #expect(potvrzeni["ulozeno"] as? String == "ws/katalog/k1/o.md" && potvrzeni["name"] as? String == "brief")
     }
 
+    @Test func davkaNa403RozlisiStropAPravo() async throws {
+        Podstrceny.pozadavky = []; Podstrceny.tela = []
+        let f = [SouborDavky(hlaseni: h, mime: "text/markdown", obsah: "A\n")]
+        Podstrceny.odpoved = { _ in (403, #"{"kod":"strop_souboru","strop":10,"pocet":10,"tarif":"solo"}"#) }
+        do { _ = try await api().nahrajDavku(f); Issue.record("bez chyby") }
+        catch ChybaServeru.stropSouboru(let st) { #expect(st.strop == 10 && st.tarif == "solo") }
+        catch { Issue.record("strop dávky jako \(error)") }
+        Podstrceny.odpoved = { _ in (403, #"{"stav":"bez_prava"}"#) }
+        await #expect(throws: ChybaServeru.bezPravaKarty) { try await api().nahrajDavku(f) }
+        Podstrceny.odpoved = { _ in (403, "{}") }
+        await #expect(throws: ChybaServeru.neprihlasen) { try await api().nahrajDavku(f) }
+    }
+
     @Test func na503SRetryAfterPockaAZkusiZnovu() async throws {
         Podstrceny.pozadavky = []; Podstrceny.tela = []
         Podstrceny.hlavicky = { _ in ["Retry-After": "0"] }
@@ -1471,5 +1488,109 @@ final class PocitaneTajemstvi: UlozisteTajemstvi, @unchecked Sendable {
         #expect(v.strop?.tarif == "solo" && v.cekaNadStropem == 3)
         #expect(try k.fronta().count == 3)
         #expect(await server.jednotliveObsahu == 0, "nad stropem se po jednom nezkouší")
+    }
+}
+
+/// Fronta se nezasekne: neznámá chyba jedné položky, výpadek, smazaný soubor.
+@Suite struct FrontaSeNezasekneTests {
+    func brief(_ d: Domov, _ id: String) throws -> String {
+        try soubor(d, "\(id).md", "---\nname: \(id)\ndescription: D\nairine:\n  typ: brief\n  id: \(id)\n---\nText \(id)\n")
+    }
+
+    @Test func neznamaChybaPreskociPolozkuAPoLimituOdmitne() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        await server.pridej(Karta(id: "cizi", name: "cizi"))
+        await server.nastav(chyba: .jine(404, ""), pro: "f1")
+        _ = try Nahlasovani(kopie: k).nahlas(cesta: try brief(d, "f1"))
+        _ = try Nahlasovani(kopie: k).nahlas(cesta: try brief(d, "f2"))
+        var v = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(v.online && !v.neprihlasen && v.odeslano == 1 && v.preskoceno == 1)
+        #expect(v.stazeno >= 1 && k.posledniSynchronizace != nil, "stažení změn proběhne i se zaseklou položkou")
+        #expect(try k.fronta().map(\.hlaseni.id) == ["f1"] && k.fronta().first?.pokusy == 1)
+        for _ in 2..<Synchronizace.limitPokusu { _ = try await Synchronizace(kopie: k, api: server).probehni() }
+        #expect(try k.fronta().first?.pokusy == Synchronizace.limitPokusu - 1)
+        v = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(try v.odmitnuto == 1 && k.fronta().isEmpty)
+        let chyba = try #require(try k.fronta(vcetneOdmitnutych: true).first?.odmitnuto?.chyby.first)
+        #expect(chyba.kod == "opakovane" && chyba.zprava.contains("kód 404"))
+    }
+
+    @Test func vypadekSeDoPokusuNepocita() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        _ = try Nahlasovani(kopie: k).nahlas(cesta: try brief(d, "o1"))
+        await server.nastav(online: false)
+        for _ in 0..<(Synchronizace.limitPokusu + 1) { _ = try await Synchronizace(kopie: k, api: server).probehni() }
+        #expect(try k.fronta().first?.pokusy == 0)
+        await server.nastav(online: true)
+        #expect(try await Synchronizace(kopie: k, api: server).probehni().odeslano == 1)
+    }
+
+    func slozky(_ d: Domov) -> [String] { [d.slozka.appendingPathComponent("prace/Znalosti").path] }
+
+    @Test func smazanyNovySouborZahodiHlaseniBezZmizelehoMista() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d)
+        let h = Hlidani(kopie: k, slozky: slozky(d), zarizeni: nil)
+        let c = try soubor(d, "Znalosti/novy.md", "# Nový\n")
+        _ = try h.zpracuj([c])
+        #expect(try k.fronta().count == 1)
+        try FileManager.default.removeItem(atPath: c)
+        #expect(try h.zpracuj([c]).zmizelo == 1)
+        #expect(try k.fronta(vcetneOdmitnutych: true).isEmpty, "hlášení smazaného souboru se neposílá")
+        #expect(try k.zmizela().isEmpty, "server kartu nezná, místo nemá co oznámit")
+        #expect(try h.porovnej().zmizelo == 0)
+    }
+
+    @Test func smazanaZnamaKartaZahodiNovouVerziAOznamiMisto() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        let h = Hlidani(kopie: k, slozky: slozky(d), zarizeni: nil)
+        let c = try soubor(d, "Znalosti/porada.md", "# Porada\n")
+        _ = try h.zpracuj([c])
+        let id = try #require(try k.fronta().first?.hlaseni.id)
+        _ = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(try k.karta(id) != nil)
+        try "# Porada 2\n".write(toFile: c, atomically: true, encoding: .utf8)
+        _ = try h.zpracuj([c])
+        #expect(try k.fronta().count == 1)
+        try FileManager.default.removeItem(atPath: c)
+        #expect(try h.zpracuj([c]).zmizelo == 1)
+        #expect(try k.fronta(vcetneOdmitnutych: true).isEmpty)
+        #expect(try k.zmizela() == [ZmizeleMisto(karta_id: id, cesta: c)])
+    }
+}
+
+final class Pocitadlo: @unchecked Sendable {
+    private let zamek = NSLock(); private var n = 0
+    func pridej() { zamek.lock(); n += 1; zamek.unlock() }
+    var pocet: Int { zamek.lock(); defer { zamek.unlock() }; return n }
+}
+
+@Suite struct McpCerstvostTests {
+    let dotaz = #"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"co_plati","arguments":{}}}"#
+
+    @Test func coPlatiObnoviStarouKopii() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let p = Pocitadlo()
+        let m = MistniMcp(kopie: k, synchronizuj: { p.pridej() })
+        _ = await m.zpracuj(dotaz)
+        #expect(p.pocet == 1, "kopie bez synchronizace se obnoví")
+        try k.nastavStav("posledni_sync", Date())
+        _ = await m.zpracuj(dotaz)
+        #expect(p.pocet == 1, "čerstvá kopie odpoví hned")
+        try k.nastavStav("posledni_sync", Date().addingTimeInterval(-MistniMcp.cerstvost - 60))
+        _ = await m.zpracuj(dotaz)
+        #expect(p.pocet == 2)
+    }
+
+    @Test func odmitnuteHlaseniNeniNahlasene() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        await server.nastav(chyba: .odmitnuto(Odmitnuti(chyby: [ChybaPole(pole: "typ", zprava: "neznámý typ", kod: "neplatne")])), pro: "m1")
+        let m = MistniMcp(kopie: k, synchronizuj: { _ = try? await Synchronizace(kopie: k, api: server).probehni() })
+        let cesta = try soubor(d, "m1.md", "---\nname: m1\ndescription: D\nairine:\n  typ: brief\n  id: m1\n---\nx\n")
+        let call = try #require(await m.zpracuj(#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"nahlas_soubor","arguments":{"cesta":"\#(cesta)"}}}"#))
+        #expect(call.contains("odmítla") && call.contains("typ: neznámý typ"))
+        #expect(!call.contains("Nahlášeno"))
+        await server.nastav(chyba: nil, pro: "m1")
+        try "---\nname: m1\ndescription: D\nairine:\n  typ: brief\n  id: m1\n---\ny\n".write(toFile: cesta, atomically: true, encoding: .utf8)
+        let znovu = try #require(await m.zpracuj(#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"nahlas_soubor","arguments":{"cesta":"\#(cesta)"}}}"#))
+        #expect(znovu.contains("Nahlášeno do Airine"))
     }
 }

@@ -95,7 +95,8 @@ Testy s Command Line Tools potřebují cestu k frameworku Testing:
 ```bash
 F=/Library/Developer/CommandLineTools/Library/Developer/Frameworks
 L=/Library/Developer/CommandLineTools/Library/Developer/usr/lib
-AIRINE_KLICE=soubor swift test -Xswiftc -F$F -Xlinker -F$F -Xlinker -rpath -Xlinker $F -Xlinker -rpath -Xlinker $L
+P=/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing
+AIRINE_KLICE=soubor swift test -Xswiftc -F$F -Xswiftc -plugin-path -Xswiftc $P -Xlinker -F$F -Xlinker -rpath -Xlinker $F -Xlinker -rpath -Xlinker $L
 ```
 
 `AIRINE_KLICE=soubor` drží klíče v souborech místo Klíčenky (jen pro testy),

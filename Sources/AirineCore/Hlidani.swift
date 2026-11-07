@@ -104,9 +104,20 @@ public struct Hlidani: Sendable {
     func zmizelo(id: String, cesta: String, _ v: inout Vysledek) throws {
         v.zmizelo += 1
         guard !zkouska else { return }
-        try kopie.zaraditZmizele(ZmizeleMisto(karta_id: id, cesta: cesta))
+        // Čekající hlášení s touhle cestou by poslalo místo, které už neplatí.
+        // Přesunutý soubor nahlásí nová cesta (stejný otisk přepíše řádek fronty
+        // a cestu v něm), takže tady zbydou jen hlášení smazaného souboru.
+        let zahozeno = try kopie.zahodHlaseni(id: id, cesta: cesta)
         var c = try kopie.stav("cesty", [String: String].self) ?? [:]
         if c[cesta] != nil { c[cesta] = nil; try kopie.nastavStav("cesty", c) }
+        // Karta, kterou server ještě nezná, nemá místo, které by mohlo zmizet:
+        // zmizelé místo neznámé karty by server odmítl a s ním celou dávku.
+        if zahozeno, try kopie.karta(id) == nil, try !kopie.fronta(vcetneOdmitnutych: true).contains(where: { $0.hlaseni.id == id }) {
+            var o = try kopie.stav("otisky", [String: String].self) ?? [:]
+            if o.removeValue(forKey: id) != nil { try kopie.nastavStav("otisky", o) }
+            return
+        }
+        try kopie.zaraditZmizele(ZmizeleMisto(karta_id: id, cesta: cesta))
     }
 
     /// Cesta → karty: místa tohohle zařízení z kopie a soubory bez id
@@ -166,6 +177,14 @@ extension Kopie {
         let hotova = Set(odeslana)
         try nastavStav("zmizela", try zmizela().filter { !hotova.contains($0) })
         try nastavStav("zmizela_odeslana", Array(Set(try odeslanaZmizelaMista()).union(hotova)))
+    }
+
+    /// Čekající hlášení karty `id` se starou `cestou` (soubor zmizel).
+    /// Vrací, jestli nějaké bylo.
+    func zahodHlaseni(id: String, cesta: String) throws -> Bool {
+        let stara = try fronta(vcetneOdmitnutych: true).filter { $0.hlaseni.id == id && $0.hlaseni.cesta == cesta }
+        for p in stara { try odeslano(p.hlaseni) }
+        return !stara.isEmpty
     }
 
     /// Dávka, kterou server odmítl tvarem (422): neopakovat ji donekonečna.

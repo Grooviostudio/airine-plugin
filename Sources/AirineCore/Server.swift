@@ -279,7 +279,8 @@ public struct HttpAirine: AirineAPI {
             guard v.count == soubory.count else { throw Self.neocekavany(data, kod) }
             return v
         case 413: throw ChybaServeru.davkaVelka
-        case 403: throw ChybaServeru.neprihlasen
+        // 403 rozliší chybaHlaseni: strop souborů, bez práva, jinak nepřihlášen.
+        // Do 7. 11. 2026 tu byl 403 vždy „nepřihlášen“ a strop dávky zastavil frontu.
         default: throw Self.chybaHlaseni(data, kod)
         }
     }

@@ -34,6 +34,7 @@ public struct Synchronizace: Sendable {
         public var zmizelo = 0                   // místa, která server přestal počítat
         public var strop: StropSouboru?          // katalog je plný: nové karty čekají ve frontě
         public var cekaNadStropem = 0
+        public var preskoceno = 0                // server vrátil neznámou chybu, hlášení zkusí příště
     }
 
     /// Běh se vším, co potřebuje lišta i příkaz: když server řekne, že uuid
@@ -138,7 +139,7 @@ public struct Synchronizace: Sendable {
             let vysledky: [VysledekDavky]
             do { vysledky = try await api.nahrajDavku(zbyva.map(\.1)) }
             catch ChybaServeru.bezSpojeni {
-                try kopie.pokusSelhal(zbyva[0].0.hlaseni); v.online = false; return .konec
+                v.online = false; return .konec
             } catch ChybaServeru.neprihlasen { v.neprihlasen = true; return .konec }
             catch ChybaServeru.ciziZarizeni { v.ciziZarizeni = true; return .konec }
             catch ChybaServeru.davkaVelka {
@@ -233,16 +234,39 @@ public struct Synchronizace: Sendable {
             v.ciziZarizeni = true
             return false
         case .bezSpojeni:
-            try kopie.pokusSelhal(p.hlaseni)
+            // Výpadek se do pokusů nepočítá: offline týden nesmí hlášení odmítnout.
             v.online = false
             return false                                 // zbytek fronty počká, pořadí zůstane
         case .neprihlasen:
             v.neprihlasen = true
             return false
         default:
-            throw e
+            // Kód, který samo opakování nespraví (404, 413, neznámá odpověď):
+            // hlášení se přeskočí, aby nezastavilo zbytek fronty ani stažení
+            // změn. Po `limitPokusu` pokusech se odmítne s vysvětlením.
+            try kopie.pokusSelhal(p.hlaseni)
+            v.preskoceno += 1
+            if p.pokusy + 1 >= Self.limitPokusu {
+                try kopie.odmitnuto(p.hlaseni, Odmitnuti(chyby: [ChybaPole(
+                    pole: "server", zprava: "Airine hlášení opakovaně nepřijala (\(Self.popis(e))). Ulož soubor znovu; když to nepomůže, napiš podpoře Airine.",
+                    kod: "opakovane")]))
+                v.odmitnuto += 1
+            }
         }
         return true
+    }
+
+    /// Kolikrát smí server hlášení odmítnout neznámou chybou, než ho plugin odloží.
+    static let limitPokusu = 5
+
+    static func popis(_ e: ChybaServeru) -> String {
+        switch e {
+        case .jine(let kod, _): return "kód \(kod)"
+        case .obsahNeprosel(let d): return "obsah: \(d)"
+        case .davkaVelka: return "příliš velké"
+        case .kurzorNeplatny: return "kód 410"
+        default: return "\(e)"
+        }
     }
 
     /// Zmizelá místa po dávkách. Server bez téhle cesty (404) nebo výpadek:

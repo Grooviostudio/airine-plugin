@@ -70,18 +70,26 @@ public final class MistniMcp: @unchecked Sendable {
         switch jmeno {
         case "co_plati":
             let projekt = try (arg["projekt_id"] as? String) ?? (arg["cesta"] as? String).flatMap { try kopie.projekt(pro: $0) }
+            // Bez lišty kopii nikdo neobnoví: starší než 5 minut se nejdřív
+            // zkusí stáhnout. Bez spojení odpoví kopie, jaká je (stav k … to řekne).
+            if kopie.posledniSynchronizace.map({ Date().timeIntervalSince($0) > Self.cerstvost }) ?? true {
+                await synchronizuj?()
+            }
             return try Doporuceni(kopie: kopie, projekt: projekt).text(fronta: kopie.fronta().count)
         case "nahlas_soubor":
             guard let cesta = arg["cesta"] as? String else { return "Chybí cesta." }
             let v = try Nahlasovani(kopie: kopie, slozky: slozky(), zarizeni: zarizeni()).nahlas(cesta: cesta)
             if case .zarazeno = v { await synchronizuj?() }
             switch v {
-            case .zarazeno(let id, _, let rada):
-                let odm = try kopie.fronta(vcetneOdmitnutych: true).filter { $0.hlaseni.id == id }.compactMap(\.odmitnuto).flatMap(\.chyby)
+            case .zarazeno(let id, let otisk, let rada):
+                let odm = try kopie.fronta(vcetneOdmitnutych: true).filter { $0.hlaseni.id == id && $0.hlaseni.otisk == otisk }.compactMap(\.odmitnuto).flatMap(\.chyby)
                 let ceka = try kopie.fronta().contains { $0.hlaseni.id == id }
-                var t = ceka ? "Uloženo do fronty, odešle se po obnovení spojení (karta \(id))." : "Nahlášeno do Airine (karta \(id))."
+                // Odmítnuté hlášení není nahlášené: dřív tu stálo „Nahlášeno“ i s výčtem odmítnutí.
+                var t = !odm.isEmpty ? "Airine hlášení odmítla (karta \(id)), oprav hlavičku a nahlas znovu:\n"
+                        + odm.map { "- \($0.pole): \($0.zprava)" }.joined(separator: "\n")
+                    : ceka ? "Uloženo do fronty, odešle se při příští synchronizaci (karta \(id))."
+                    : "Nahlášeno do Airine (karta \(id))."
                 if let rada { t += "\n" + rada }
-                if !odm.isEmpty { t += "\nAirine hlášení odmítla, oprav hlavičku a nahlas znovu:\n" + odm.map { "- \($0.pole): \($0.zprava)" }.joined(separator: "\n") }
                 return t
             case .beze_zmeny: return "Beze změny od posledního hlášení."
             case .preskoceno(let proc): return "Nehlásím: \(proc)."
@@ -91,6 +99,9 @@ public final class MistniMcp: @unchecked Sendable {
             throw NSError(domain: "airine", code: 1, userInfo: [NSLocalizedDescriptionKey: "neznámý nástroj \(jmeno)"])
         }
     }
+
+    /// Jak stará smí být místní kopie, než `co_plati` zkusí synchronizaci.
+    static let cerstvost: TimeInterval = 300
 
     func odpoved(id: Any, vysledek: Any? = nil, chyba: (Int, String)? = nil) -> String {
         var o: [String: Any] = ["jsonrpc": "2.0", "id": id]
