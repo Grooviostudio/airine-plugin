@@ -26,6 +26,25 @@ public enum Slozky {
         zamek.lock(); pravidla = (p, Set(p.preskocit)); zamek.unlock()
     }
 
+    /// Profil, za který proces hlásí. Soubor ze složky jiného workspace se
+    /// nehlásí, i když leží ve vybrané složce: jinak by dokumenty Airine
+    /// odešly do katalogu jiné firmy. `nil` = profily se neřeší (testy).
+    nonisolated(unsafe) private static var workspace: (mapa: Profily, id: String)?
+
+    public static func hlasZa(_ id: String, mapa: Profily) {
+        zamek.lock(); workspace = mapa.slozky.isEmpty ? nil : (mapa, id); zamek.unlock()
+    }
+
+    static func jinyWorkspace(_ c: String) -> Bool {
+        zamek.lock(); let w = workspace; zamek.unlock()
+        return jinyWorkspace(c, w)
+    }
+
+    static func jinyWorkspace(_ c: String, _ w: (mapa: Profily, id: String)?) -> Bool {
+        guard let w else { return false }
+        return w.mapa.profil(pro: c) != w.id
+    }
+
     /// Leží cesta pod knihovnou nebo sestavením uvnitř některé vybrané složky?
     /// Hlídání podle toho zahodí událost dřív, než cokoli čte.
     public static func vKnihovne(_ cesta: String, _ slozky: [String]) -> Bool {
@@ -50,6 +69,7 @@ public enum Slozky {
     public static func duvod(_ cesta: String, _ slozky: [String]) -> String? {
         let c = normalizuj(cesta)
         if c.contains("/.claude/worktrees/") { return "pracovní kopie repozitáře" }
+        if jinyWorkspace(c) { return "složka patří jinému workspace (airine profily)" }
         guard !slozky.isEmpty else { return "není vybraná žádná složka pro Znalosti (airine slozky pridej CESTA)" }
         // Nejhlubší vybraná složka: skryté složky se počítají až pod ní.
         guard let slozkySouboru = podSlozkou(c, slozky) else { return "mimo složky pro Znalosti" }

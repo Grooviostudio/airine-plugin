@@ -30,6 +30,45 @@ Odhlášení je `airine odhlas`. Přístup jde odvolat i v Airine v Nastavení m
 Když je katalog plný (Solo 2 000, Team 10 000 souborů), lišta napíše „Katalog je plný, navyš tarif“. Nové soubory počkají
 na Macu ve frontě, nic se neztratí; nové verze souborů, které už v Airine jsou, projdou dál.
 
+### Víc workspace na jednom Macu
+
+Jedno přihlášení patří jednomu workspace. Kdo pracuje pro dvě firmy, založí si pro druhou
+**profil**: vlastní místní kopii (`profily/<id>/` v domově) a vlastní položky v Klíčence
+(`token.<id>`, `klic-kopie.<id>`). Složka pak patří tomu profilu, i se všemi podsložkami:
+
+```
+airine profil pridej firma-b --nazev "Firma B"
+pbpaste | airine prihlas --profil firma-b        # osobní token z workspace Firma B
+airine slozka ~/Prace/FirmaB --profil firma-b
+cd ~/Prace/FirmaB && airine propoj <projekt_id>  # projekt ve workspace Firma B
+airine slozky pridej ~/Prace/FirmaB --profil firma-b
+```
+
+- Hook na začátku sezení, hlášení po změně souboru i místní MCP vyberou profil podle
+  složky, ve které agent pracuje (nejdelší shoda, se symlinky a diakritikou v obou tvarech).
+  Kterýkoli příkaz jde spustit v profilu ručně s `--profil <id>`.
+- Hlavička doporučení řekne, odkud katalog je: `# Airine (workspace Firma B): co platí…`.
+  Výchozí profil jde pojmenovat `airine profil pridej vychozi --nazev JMÉNO`.
+- Soubor ze složky jiného workspace se nikdy nenahlásí do tohohle, ani když leží ve vybrané
+  složce (`složka patří jinému workspace`).
+- Mapa složek je v `profily.json` v domově: jen cesty, id a jména, žádný obsah ani token.
+  `airine profily` ji vypíše, `airine slozka <cesta> --zrus` složku z profilu vyjme.
+- Výchozí profil zůstává, kde byl, se stejnými jmény v Klíčence. Bez `profily.json` se nic
+  nemění.
+- Lišta synchronizuje i další profily, jeden po druhém. Hlídání složek (FSEvents) běží zatím
+  jen pro výchozí profil; soubory ostatních hlásí hooky a `airine porovnej --profil <id>`.
+
+### Jak plugin vypnout
+
+1. V liště Airine → Ukončit. Je-li Airine v Nastavení systému → Obecné → Otevírat při
+   přihlášení, vypni ji tam.
+2. `claude plugin disable airine@airine` a nové sezení Claude Code. Hooky ani místní MCP
+   pak neběží.
+3. Kontrola: `pgrep -fl Airine.app` nevypíše nic.
+
+Zpátky: `claude plugin enable airine@airine` a spustit Airine. Data v domově ani položky
+v Klíčence se vypnutím nemažou.
+
 ## Co dělá a co ne
 
 - Hlásí jen soubory ve složkách, které si vybereš (dialog v liště nebo `airine slozky pridej
@@ -55,6 +94,10 @@ na Macu ve frontě, nic se neztratí; nové verze souborů, které už v Airine 
   přípony, soubory s tajemstvím a s `--vypis` i seznam souborů.
 - Místní kopie katalogu je v `~/Library/Application Support/Airine`, každý řádek
   šifrovaný (AES-GCM). Klíč i osobní token jsou v Klíčence.
+- Hooky, místní MCP a tichá synchronizace na pozadí Klíčenku čtou bez okna a nikdy do ní
+  nepíšou. Když bez okna nejde (zamčená Klíčenka, nová verze aplikace), hook řekne agentovi
+  „místní kopie je zamčená“ a MCP radí otevřít lištu. Zeptat se smí jen lišta a příkaz, který
+  spustil člověk.
 - Lišta sama hlídá vybrané složky (FSEvents, žádné procházení disku): změna souboru je
   v Airine do minuty, ať ji udělal kdokoli. Smazaný soubor se odrazí jen v místech karty,
   karta zůstává ([docs/hlidani.md](docs/hlidani.md)). `airine porovnej [--zkouska]`

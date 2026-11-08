@@ -29,12 +29,19 @@ public enum ChybaTajemstvi: Error {
 public struct Klicenka: UlozisteTajemstvi {
     let sluzba: String
     let bezOkna: Bool
-    public init(sluzba: String = "eu.airine.plugin", bezOkna: Bool = false) { self.sluzba = sluzba; self.bezOkna = bezOkna }
+    /// Id profilu: položky jiného workspace mají jméno s příponou
+    /// (`token.<id>`). Výchozí profil příponu nemá, ať se nic nepřejmenuje.
+    let profil: String?
+    public init(sluzba: String = "eu.airine.plugin", bezOkna: Bool = false, profil: String? = nil) {
+        self.sluzba = sluzba; self.bezOkna = bezOkna; self.profil = profil
+    }
+
+    func ucet(_ jmeno: String) -> String { profil.map { jmeno + "." + $0 } ?? jmeno }
 
     private func dotaz(_ jmeno: String) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
          kSecAttrService as String: sluzba,
-         kSecAttrAccount as String: jmeno]
+         kSecAttrAccount as String: ucet(jmeno)]
     }
 
     func dotazCteni(_ jmeno: String) -> [String: Any] {
@@ -152,7 +159,7 @@ public enum Tajemstvi {
         let klic = (soubor ? "soubor:" : bezOkna ? "klicenka-bez-okna:" : "klicenka:") + domov.slozka.path
         zamek.lock(); defer { zamek.unlock() }
         if let u = sdilene[klic] { return u }
-        let u = PametTajemstvi(soubor ? SouborTajemstvi(domov: domov) : Klicenka(bezOkna: bezOkna))
+        let u = PametTajemstvi(soubor ? SouborTajemstvi(domov: domov) : Klicenka(bezOkna: bezOkna, profil: domov.profil))
         sdilene[klic] = u
         return u
     }

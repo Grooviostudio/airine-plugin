@@ -26,6 +26,14 @@ airine — plugin Airine pro Claude Code a Cursor
   airine nahraj-obsah [--koren CESTA]… [--vynech VZOR]… [--pauza MS] [--zkouska] [--vypis]
                                   pošle obsah karet, které ho v Airine nemají
   airine mcp                      místní MCP server přes stdio
+
+Víc workspace na jednom Macu (profily):
+  airine profily                  profily a složky, které jim patří
+  airine profil pridej <id> --nazev JMÉNO
+                                  založí profil (vlastní kopie a položky v Klíčence)
+  airine slozka <cesta> --profil <id> | --zrus
+                                  složka a podsložky patří profilu (vychozi = výchozí)
+  Kterýkoli příkaz s --profil <id> pracuje v tom profilu, jinak rozhoduje složka.
 """
 
 var argumenty = Array(CommandLine.arguments.dropFirst())
@@ -45,7 +53,37 @@ func stdinJson() -> [String: Any] {
     return (try? JSONSerialization.jsonObject(with: d) as? [String: Any]) ?? [:]
 }
 
-let domov = Domov()
+/// Vstup hooku (JSON na stdin) se čte jednou hned na začátku: podle `cwd`
+/// nebo cesty souboru se vybírá profil dřív, než se sáhne do Klíčenky.
+let vstup: [String: Any] = argumenty.contains("--hook") ? stdinJson() : [:]
+
+@MainActor func nahled(_ jmeno: String) -> String? {
+    guard let i = argumenty.firstIndex(of: jmeno), i + 1 < argumenty.count else { return nil }
+    return argumenty[i + 1]
+}
+
+/// Profil (workspace): `--profil`, jinak podle složky, ve které se pracuje.
+let koren = Domov()
+let mapa = Profily.nacti(koren.koren)
+let zvolenyProfil = volba("--profil")
+let pracovniSlozka = ProcessInfo.processInfo.environment["CLAUDE_PROJECT_DIR"].flatMap { $0.isEmpty ? nil : $0 }
+    ?? FileManager.default.currentDirectoryPath
+let kontext: String = switch argumenty.first {
+case "doporuceni": (vstup["cwd"] as? String) ?? nahled("--cwd") ?? pracovniSlozka
+case "nahlas": ((vstup["tool_input"] as? [String: Any])?["file_path"] as? String) ?? (vstup["file_path"] as? String)
+    ?? argumenty.dropFirst().first { !$0.hasPrefix("--") } ?? pracovniSlozka
+case "propoj": nahled("--slozka") ?? pracovniSlozka
+default: pracovniSlozka
+}
+let idProfilu = zvolenyProfil ?? mapa.profil(pro: kontext)
+if idProfilu != Profily.vychozi, mapa.profily[idProfilu] == nil, !["profil", "slozka"].contains(argumenty.first ?? "") {
+    chyba("\(ChybaProfilu.neznamy(idProfilu))")
+}
+let domov = koren.profil(idProfilu)
+Slozky.hlasZa(idProfilu, mapa: mapa)
+/// Jméno workspace do hlavičky, jen když je profilů víc než výchozí.
+let nazevWorkspace: String? = mapa.profily.keys.contains { $0 != Profily.vychozi }
+    ? (mapa.nazev(idProfilu) ?? (idProfilu == Profily.vychozi ? "výchozí" : idProfilu)) : nil
 
 /// Proces na pozadí: hook, MCP server, tichá synchronizace. Nikdy neukáže okno
 /// Klíčenky a do Klíčenky nepíše. Když klíč bez okna nedostane, tiše skončí
@@ -89,7 +127,7 @@ if !naPozadi, !["prihlas", "odhlas"].contains(argumenty.first ?? ""),
 @MainActor func synchronizujNaPozadi() {
     let p = Process()
     p.executableURL = URL(fileURLWithPath: CommandLine.arguments[0]).standardizedFileURL
-    p.arguments = ["sync", "--tise"]
+    p.arguments = ["sync", "--tise", "--profil", domov.idProfilu]
     p.standardOutput = FileHandle.nullDevice
     p.standardError = FileHandle.nullDevice
     try? p.run()
@@ -112,7 +150,7 @@ case "prihlas":
     // Osobní token nahradí přihlášení z prohlížeče, ať ho obnova nepřepíše.
     try? tajemstvi.smaz("oauth")
     do { try tajemstvi.zapis("token", Data(token.utf8)) } catch { chyba("Token nejde uložit: \(error)") }
-    print("Token uložen. Server: \(n.server)")
+    print("Token uložen. Server: \(n.server)" + (nazevWorkspace.map { "  workspace: \($0) (profil \(idProfilu))" } ?? ""))
 
 case "odhlas":
     Prihlaseni.odhlas(tajemstvi)
@@ -140,6 +178,7 @@ case "sync":
 case "stav":
     let (kopie, n) = otevri()
     let f = (try? kopie.fronta(vcetneOdmitnutych: true)) ?? []
+    if let w = nazevWorkspace { print("Workspace: \(w) (profil \(idProfilu))") }
     print("Server: \(n.server)  zařízení: \(n.nazevZarizeni) (\(n.zarizeni))")
     print("Přihlášen: \(api(n) == nil ? "ne" : "ano")  posílat obsah: \(n.posilatObsah ? "ano" : "ne")")
     print("Poslední synchronizace: \(kopie.posledniSynchronizace.map { "\($0)" } ?? "nikdy")")
@@ -160,7 +199,7 @@ case "doporuceni":
     let hook = prepinac("--hook")
     let vse = prepinac("--vse")
     var cwd = volba("--cwd") ?? FileManager.default.currentDirectoryPath
-    if hook, let c = stdinJson()["cwd"] as? String { cwd = c }
+    if hook, let c = vstup["cwd"] as? String { cwd = c }
     guard let (kopie, n) = otevriTise() else {
         if hook {
             let o: [String: Any] = ["hookSpecificOutput": ["hookEventName": "SessionStart", "additionalContext": textZamceno]]
@@ -171,7 +210,7 @@ case "doporuceni":
     }
     let projekt = vse ? nil : (try? kopie.projekt(pro: cwd)) ?? nil
     let text: String
-    do { text = try Doporuceni(kopie: kopie, projekt: projekt).text(fronta: kopie.fronta().count) }
+    do { text = try Doporuceni(kopie: kopie, projekt: projekt).text(fronta: kopie.fronta().count, workspace: nazevWorkspace) }
     catch { if hook { exit(0) }; chyba("\(error)") }
     if hook {
         // SessionStart: text jde do kontextu agenta. Synchronizace běží vedle.
@@ -187,7 +226,7 @@ case "nahlas":
     var cesta = argumenty.first
     if hook {
         // Claude Code PostToolUse: tool_input.file_path; Cursor afterFileEdit: file_path.
-        let j = stdinJson()
+        let j = vstup
         cesta = ((j["tool_input"] as? [String: Any])?["file_path"] as? String) ?? (j["file_path"] as? String)
     }
     guard let cesta else { if hook { exit(0) }; chyba("airine nahlas <cesta>") }
@@ -339,13 +378,46 @@ case "mcp":
     }, synchronizuj: { kopie in
         guard let td = try? t.cti("token"), let tok = String(data: td, encoding: .utf8), !tok.isEmpty else { return }
         _ = try? await Synchronizace.spust(domov: d, kopie: kopie) { HttpAirine(nastaveni: $0, token: tok) }
-    }, slozky: { (try? Nastaveni.nacti(d))?.slozky ?? [] }, zarizeni: { (try? Nastaveni.nacti(d))?.zarizeni })
+    }, slozky: { (try? Nastaveni.nacti(d))?.slozky ?? [] }, zarizeni: { (try? Nastaveni.nacti(d))?.zarizeni },
+       workspace: nazevWorkspace, vychoziCesta: kontext)
     while let radek = readLine(strippingNewline: true) {
         if radek.isEmpty { continue }
         if let odp = await server.zpracuj(radek) {
             FileHandle.standardOutput.write(Data((odp + "\n").utf8))
         }
     }
+
+case "profily":
+    let vse = [Profily.vychozi] + mapa.profily.keys.filter { $0 != Profily.vychozi }.sorted()
+    for id in vse {
+        let slozky = mapa.slozky.filter { $0.value == id }.keys.sorted()
+        print("\(id): \(mapa.nazev(id) ?? (id == Profily.vychozi ? "výchozí" : id))"
+              + (slozky.isEmpty ? (id == Profily.vychozi ? "  (všechny ostatní složky)" : "  (zatím bez složky)") : ""))
+        slozky.forEach { print("  " + $0) }
+    }
+
+case "profil":
+    guard argumenty.first == "pridej", argumenty.count >= 2 else { chyba("airine profil pridej <id> --nazev JMÉNO") }
+    let id = argumenty[1]
+    guard let nazev = volba("--nazev"), !nazev.isEmpty else { chyba("Chybí jméno workspace: --nazev JMÉNO") }
+    var m = mapa
+    do { try m.pridej(id, nazev: nazev); try m.uloz(koren.koren) } catch { chyba("\(error)") }
+    print(id == Profily.vychozi ? "Výchozí profil se v hlavičce jmenuje \(nazev)."
+          : "Profil \(id) (\(nazev)) založen. Přihlas ho: airine prihlas --profil \(id) (osobní token z toho workspace na stdin).")
+
+case "slozka":
+    let zrusit = prepinac("--zrus")
+    guard let cesta = argumenty.first else { chyba("airine slozka <cesta> --profil <id> | --zrus") }
+    var m = mapa
+    if zrusit { m.zrus(cesta) }
+    else {
+        guard let id = zvolenyProfil else { chyba("Kterému profilu? airine slozka <cesta> --profil <id>") }
+        var adresar: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: Slozky.normalizuj(cesta), isDirectory: &adresar), adresar.boolValue else { chyba("Složka neexistuje: \(cesta)") }
+        do { try m.prirad(cesta, id) } catch { chyba("\(error)") }
+    }
+    do { try m.uloz(koren.koren) } catch { chyba("Profily nejde uložit: \(error)") }
+    print(zrusit ? "\(Profily.klic(cesta)) už nepatří žádnému profilu." : "\(Profily.klic(cesta)) → profil \(zvolenyProfil!)")
 
 default:
     print(napoveda)

@@ -15,9 +15,16 @@ public final class MistniMcp: @unchecked Sendable {
     /// `nil` = bez omezení.
     let slozky: @Sendable () -> [String]?
     let zarizeni: @Sendable () -> String?
+    /// Jméno workspace do hlavičky `co_plati` (víc profilů na Macu).
+    let workspace: String?
+    /// Složka, ve které agent pracuje: `co_plati` bez argumentů podle ní
+    /// najde propojený projekt.
+    let vychoziCesta: String?
 
     public init(otevri: @escaping @Sendable () throws -> Kopie, synchronizuj: (@Sendable (Kopie) async -> Void)? = nil,
-                slozky: @escaping @Sendable () -> [String]? = { nil }, zarizeni: @escaping @Sendable () -> String? = { nil }) {
+                slozky: @escaping @Sendable () -> [String]? = { nil }, zarizeni: @escaping @Sendable () -> String? = { nil },
+                workspace: String? = nil, vychoziCesta: String? = nil) {
+        self.workspace = workspace; self.vychoziCesta = vychoziCesta
         self.otevri = otevri; self.synchronizuj = synchronizuj; self.slozky = slozky; self.zarizeni = zarizeni
     }
 
@@ -93,13 +100,13 @@ public final class MistniMcp: @unchecked Sendable {
         guard let kopie else { return Self.zamceno }
         switch jmeno {
         case "co_plati":
-            let projekt = try (arg["projekt_id"] as? String) ?? (arg["cesta"] as? String).flatMap { try kopie.projekt(pro: $0) }
+            let projekt = try (arg["projekt_id"] as? String) ?? ((arg["cesta"] as? String) ?? vychoziCesta).flatMap { try kopie.projekt(pro: $0) }
             // Bez lišty kopii nikdo neobnoví: starší než 5 minut se nejdřív
             // zkusí stáhnout. Bez spojení odpoví kopie, jaká je (stav k … to řekne).
             if kopie.posledniSynchronizace.map({ Date().timeIntervalSince($0) > Self.cerstvost }) ?? true {
                 await synchronizuj?(kopie)
             }
-            return try Doporuceni(kopie: kopie, projekt: projekt).text(fronta: kopie.fronta().count)
+            return try Doporuceni(kopie: kopie, projekt: projekt).text(fronta: kopie.fronta().count, workspace: workspace)
         case "nahlas_soubor":
             guard let cesta = arg["cesta"] as? String else { return "Chybí cesta." }
             let v = try Nahlasovani(kopie: kopie, slozky: slozky(), zarizeni: zarizeni()).nahlas(cesta: cesta)

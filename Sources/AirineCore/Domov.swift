@@ -4,6 +4,10 @@ import Foundation
 /// `AIRINE_DOMOV` ho přesměruje (testy, izolované zkoušky). Čte: Kopie, Klic.
 public struct Domov: Sendable {
     public let slozka: URL
+    /// Kořen domova: tam leží výchozí profil a `profily.json`.
+    public let koren: URL
+    /// Id profilu (workspace); `nil` = výchozí profil v kořeni. Viz `Profily`.
+    public let profil: String?
 
     public init(slozka: URL? = nil) {
         if let slozka {
@@ -14,6 +18,12 @@ public struct Domov: Sendable {
             let podpora = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             self.slozka = podpora.appendingPathComponent("Airine", isDirectory: true)
         }
+        koren = self.slozka
+        profil = nil
+    }
+
+    init(slozka: URL, koren: URL? = nil, profil: String?) {
+        self.slozka = slozka; self.koren = koren ?? slozka; self.profil = profil
     }
 
     public var databaze: URL { slozka.appendingPathComponent("kopie.sqlite") }

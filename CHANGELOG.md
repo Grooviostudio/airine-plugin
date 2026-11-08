@@ -1,5 +1,22 @@
 # Changelog
 
+## 8. 11. 2026
+
+- **Víc workspace na jednom Macu (profily).** `airine profil pridej <id> --nazev JMÉNO`
+  založí profil s vlastní místní kopií (`profily/<id>/`) a vlastními položkami v Klíčence
+  (`token.<id>`, `klic-kopie.<id>`). `airine slozka <cesta> --profil <id>` přiřadí složku.
+  Hook, hlášení a místní MCP vyberou profil podle složky sezení, `--profil` ho určí ručně.
+  Hlavička doporučení jmenuje workspace. Soubor ze složky jiného workspace se do tohohle
+  nenahlásí. Výchozí profil zůstává beze změny jmen; bez `profily.json` se nic nemění.
+- **`co_plati` bez argumentů zná složku sezení.** Najde propojený projekt podle složky,
+  ve které agent pracuje, místo celého katalogu.
+- **Lišta synchronizuje i další profily**, jeden po druhém, a ukáže jejich stav.
+- **Hooky, MCP a tichý sync neukážou okno Klíčenky.** Procesy na pozadí čtou bez okna
+  (`LAContext.interactionNotAllowed`) a do Klíčenky nepíšou: nezakládají klíč kopie
+  a neobnovují token. Zamčená kopie: hook to řekne agentovi, MCP odpoví a zkusí to znovu
+  při dalším volání. Dřív se okno ukazovalo při každém sezení a po každé aktualizaci.
+- README: víc workspace a jak plugin vypnout.
+
 ## 7. 11. 2026
 
 - **Strop v dávce obsahu už neodhlásí.** 403 z `/obsah-davka` se rozlišuje jako u hlášení:

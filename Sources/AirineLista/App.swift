@@ -32,8 +32,15 @@ final class Stav: ObservableObject {
     var casovac: Timer?
     var hlidac: Hlidac?
     var hlidaneSlozky: [String] = []
+    /// Další workspace (profily) kromě výchozího: kopie otevřené lištou
+    /// a jména pro řádek v menu. Hlídání složek běží jen pro výchozí profil,
+    /// soubory ostatních profilů hlásí hooky a `airine porovnej --profil`.
+    var dalsiKopie: [String: Kopie] = [:]
+    @Published var dalsi: [String] = []
 
     init() {
+        // Lišta hlídá výchozí profil: složky jiných workspace do něj nehlásí.
+        Slozky.hlasZa(Profily.vychozi, mapa: Profily.nacti(domov.koren))
         kopie = try? Kopie.otevri(domov)
         obnov()
         hlidej()
@@ -176,7 +183,30 @@ final class Stav: ObservableObject {
             rozpory = v.rozpory
             strop = v.strop?.zprava(ceka: v.cekaNadStropem)
         }
+        await synchronizujDalsi()
         obnov()
+    }
+
+    /// Ostatní profily jeden po druhém (ne najednou). Jen s osobním tokenem
+    /// v jejich Klíčence; bez něj se profil přeskočí.
+    func synchronizujDalsi() async {
+        let mapa = Profily.nacti(domov.koren)
+        Slozky.hlasZa(Profily.vychozi, mapa: mapa)
+        var radky: [String] = []
+        for id in mapa.profily.keys.sorted() where id != Profily.vychozi {
+            let d = domov.profil(id)
+            let nazev = mapa.nazev(id) ?? id
+            guard let t = try? Tajemstvi.vychozi(d).cti("token"), let tok = String(data: t, encoding: .utf8), !tok.isEmpty else {
+                radky.append("\(nazev): nepřihlášeno"); continue
+            }
+            if dalsiKopie[id] == nil { dalsiKopie[id] = try? Kopie.otevri(d) }
+            guard let k = dalsiKopie[id] else { radky.append("\(nazev): kopii nejde otevřít"); continue }
+            let v = try? await Synchronizace.spust(domov: d, kopie: k, pauza: .milliseconds(500),
+                                                   api: { HttpAirine(nastaveni: $0, token: tok) })
+            if v?.neprihlasen == true { Tajemstvi.vychozi(d).zapomen("token") }
+            radky.append("\(nazev): " + (v == nil ? "synchronizace selhala" : v!.online ? (v!.neprihlasen ? "token neplatí" : "připojeno") : "neodpovídá"))
+        }
+        dalsi = radky
     }
 }
 
@@ -198,6 +228,7 @@ struct AirineLista: App {
                 if stav.fronta > 0 { Text("Čeká na odeslání: \(stav.fronta)") }
                 if stav.odmitnuto > 0 { Text("Odmítnutá hlášení: \(stav.odmitnuto)") }
                 if !stav.rozpory.isEmpty { Text("Rozpory: \(stav.rozpory.count)") }
+                ForEach(stav.dalsi, id: \.self) { Text("Workspace " + $0) }
                 if let s = stav.strop { Text(s).fixedSize(horizontal: false, vertical: true).frame(maxWidth: 280, alignment: .leading) }
                 Divider()
                 Text(stav.slozky.isEmpty ? "Airine zatím nebere z žádné složky"

@@ -44,9 +44,11 @@ public struct Doporuceni: Sendable {
 
     /// Text pro kontext agenta. Jen karty, obsah si agent načte, až ho potřebuje
     /// (postupné odhalování). ~100 tokenů na kartu, proto jen projekt.
-    public func text(fronta: Int = 0) -> String {
+    /// `workspace`: jméno workspace, když jich je na Macu víc (profily).
+    /// Agent pak ví, ze které firmy katalog je.
+    public func text(fronta: Int = 0, workspace: String? = nil) -> String {
         var r: [String] = []
-        r.append("# Airine: co platí" + (projekt == nil ? "" : " k projektu") + " (stav k \(stavK.map { Self.cas.string(from: $0) } ?? "nikdy, zatím bez synchronizace"))")
+        r.append("# Airine" + (workspace.map { " (workspace \($0))" } ?? "") + ": co platí" + (projekt == nil ? "" : " k projektu") + " (stav k \(stavK.map { Self.cas.string(from: $0) } ?? "nikdy, zatím bez synchronizace"))")
         if projekt == nil {
             r.append("Složka není propojená s projektem v Airine (`airine propoj <projekt_id>`). Ukazuju celý katalog.")
         }
