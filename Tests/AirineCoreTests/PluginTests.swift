@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import LocalAuthentication
 import Testing
 @testable import AirineCore
 
@@ -378,6 +379,24 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
         #expect(try k.projekt(pro: "/a/b/c/d") == "p2")
         #expect(try k.projekt(pro: "/a/b/x") == "p1")
         #expect(try k.projekt(pro: "/a/bb") == nil)
+    }
+}
+
+@Suite struct McpZamcenoTests {
+    @Test func bezKopieOdpovidaARadiListu() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d)
+        final class Prepinac: @unchecked Sendable { var otevreno = false }
+        let p = Prepinac()
+        let m = MistniMcp(otevri: { guard p.otevreno else { throw ChybaTajemstvi.klicChybi }; return k })
+        let ini = try #require(await m.zpracuj(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#))
+        #expect(ini.contains("airine-mistni"))
+        let zam = try #require(await m.zpracuj(#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"co_plati","arguments":{}}}"#))
+        #expect(zam.contains("zamčená"))
+        let nez = try #require(await m.zpracuj(#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"nic","arguments":{}}}"#))
+        #expect(nez.contains("neznámý nástroj"))
+        p.otevreno = true
+        let ok = try #require(await m.zpracuj(#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"co_plati","arguments":{}}}"#))
+        #expect(!ok.contains("zamčená") && ok.contains("Airine"))
     }
 }
 
@@ -1381,6 +1400,28 @@ final class PocitaneTajemstvi: UlozisteTajemstvi, @unchecked Sendable {
     @Test func vychoziJeJednoNaProces() throws {
         let d = try docasnyDomov()
         #expect(Tajemstvi.vychozi(d) === Tajemstvi.vychozi(d))
+        #expect(Tajemstvi.vychozi(d, bezOkna: true) === Tajemstvi.vychozi(d, bezOkna: true))
+    }
+
+    // Procesy na pozadí (hooky, MCP, tichý sync) nesmí ukázat okno Klíčenky.
+    // Skutečná Klíčenka se v testech nečte: ověřuje se dotaz a to, že zápis
+    // se ani nezkusí.
+    @Test func naPozadiBezOkna() throws {
+        let q = Klicenka(sluzba: "test", bezOkna: true).dotazCteni("token")
+        let ctx = try #require(q[kSecUseAuthenticationContext as String] as? LAContext)
+        #expect(ctx.interactionNotAllowed)
+        #expect(Klicenka(sluzba: "test").dotazCteni("token")[kSecUseAuthenticationContext as String] == nil)
+        #expect(throws: ChybaTajemstvi.self) { try Klicenka(sluzba: "test", bezOkna: true).zapis("token", Data("x".utf8)) }
+        #expect(throws: ChybaTajemstvi.self) { try Klicenka(sluzba: "test", bezOkna: true).smaz("token") }
+    }
+
+    @Test func naPozadiKlicKopieNezaklada() throws {
+        let zdroj = PocitaneTajemstvi()
+        #expect(throws: ChybaTajemstvi.self) { try Tajemstvi.klicKopie(zdroj, zalozit: false) }
+        #expect(zdroj.data["klic-kopie"] == nil)
+        _ = try Tajemstvi.klicKopie(zdroj)
+        #expect(zdroj.data["klic-kopie"]?.count == 32)
+        _ = try Tajemstvi.klicKopie(zdroj, zalozit: false)
     }
 }
 

@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import LocalAuthentication
 import Security
 
 /// Tajemství pluginu: šifrovací klíč místní kopie a osobní token Airine.
@@ -11,11 +12,24 @@ public protocol UlozisteTajemstvi: Sendable {
     func smaz(_ jmeno: String) throws
 }
 
-public enum ChybaTajemstvi: Error { case klicenka(OSStatus) }
+public enum ChybaTajemstvi: Error {
+    case klicenka(OSStatus)
+    /// Proces na pozadí (hook, MCP, tichá synchronizace) do Klíčenky nepíše:
+    /// zápis i založení položky umí ukázat okno.
+    case bezOkna
+    /// Klíč místní kopie neexistuje a proces na pozadí ho nezakládá.
+    case klicChybi
+}
 
+/// `bezOkna`: proces na pozadí. Čtení nikdy neukáže okno Klíčenky; když by ho
+/// potřebovalo (zamčená klíčenka, binárka mimo seznam povolených), skončí
+/// chybou a proces tiše skončí. Okno smí ukázat jen lišta a ruční příkazy.
+/// Důvod: hooky a MCP běží desítkykrát za hodinu, každý jako nový proces,
+/// a ad hoc podepsaná binárka „Vždy povolit“ po aktualizaci ztratí.
 public struct Klicenka: UlozisteTajemstvi {
     let sluzba: String
-    public init(sluzba: String = "eu.airine.plugin") { self.sluzba = sluzba }
+    let bezOkna: Bool
+    public init(sluzba: String = "eu.airine.plugin", bezOkna: Bool = false) { self.sluzba = sluzba; self.bezOkna = bezOkna }
 
     private func dotaz(_ jmeno: String) -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
@@ -23,10 +37,19 @@ public struct Klicenka: UlozisteTajemstvi {
          kSecAttrAccount as String: jmeno]
     }
 
-    public func cti(_ jmeno: String) throws -> Data? {
+    func dotazCteni(_ jmeno: String) -> [String: Any] {
         var q = dotaz(jmeno)
         q[kSecReturnData as String] = true
         q[kSecMatchLimit as String] = kSecMatchLimitOne
+        if bezOkna {
+            let lac = LAContext(); lac.interactionNotAllowed = true
+            q[kSecUseAuthenticationContext as String] = lac
+        }
+        return q
+    }
+
+    public func cti(_ jmeno: String) throws -> Data? {
+        let q = dotazCteni(jmeno)
         var vysledek: AnyObject?
         let s = SecItemCopyMatching(q as CFDictionary, &vysledek)
         if s == errSecItemNotFound { return nil }
@@ -35,6 +58,7 @@ public struct Klicenka: UlozisteTajemstvi {
     }
 
     public func zapis(_ jmeno: String, _ data: Data) throws {
+        if bezOkna { throw ChybaTajemstvi.bezOkna }
         let s = SecItemUpdate(dotaz(jmeno) as CFDictionary, [kSecValueData as String: data] as CFDictionary)
         if s == errSecItemNotFound {
             var q = dotaz(jmeno)
@@ -48,6 +72,7 @@ public struct Klicenka: UlozisteTajemstvi {
     }
 
     public func smaz(_ jmeno: String) throws {
+        if bezOkna { throw ChybaTajemstvi.bezOkna }
         let s = SecItemDelete(dotaz(jmeno) as CFDictionary)
         guard s == errSecSuccess || s == errSecItemNotFound else { throw ChybaTajemstvi.klicenka(s) }
     }
@@ -109,23 +134,35 @@ public final class PametTajemstvi: UlozisteTajemstvi, @unchecked Sendable {
 }
 
 public enum Tajemstvi {
+    /// Pro celý proces na pozadí: Klíčenka nesmí ukázat žádné okno, ani
+    /// výzvu k odemčení. Volá jen `airine` v režimu hooku, MCP a tiché
+    /// synchronizace, nikdy lišta. API je zastaralé, ale pro klíčenku přihlášení
+    /// (kde plugin položky má) je jediné, které okno spolehlivě vypne.
+    public static func zakazOkna() {
+        SecKeychainSetUserInteractionAllowed(false)
+    }
+
     private static let zamek = NSLock()
     nonisolated(unsafe) private static var sdilene: [String: PametTajemstvi] = [:]
 
     /// Jedno úložiště na domov a proces, takže každou položku přečte jednou.
-    public static func vychozi(_ domov: Domov) -> PametTajemstvi {
+    /// `bezOkna` pro procesy na pozadí (viz `Klicenka`).
+    public static func vychozi(_ domov: Domov, bezOkna: Bool = false) -> PametTajemstvi {
         let soubor = ProcessInfo.processInfo.environment["AIRINE_KLICE"] == "soubor"
-        let klic = (soubor ? "soubor:" : "klicenka:") + domov.slozka.path
+        let klic = (soubor ? "soubor:" : bezOkna ? "klicenka-bez-okna:" : "klicenka:") + domov.slozka.path
         zamek.lock(); defer { zamek.unlock() }
         if let u = sdilene[klic] { return u }
-        let u = PametTajemstvi(soubor ? SouborTajemstvi(domov: domov) : Klicenka())
+        let u = PametTajemstvi(soubor ? SouborTajemstvi(domov: domov) : Klicenka(bezOkna: bezOkna))
         sdilene[klic] = u
         return u
     }
 
     /// Klíč místní kopie. Vznikne při prvním spuštění a nikdy neopustí Mac.
-    public static func klicKopie(_ u: UlozisteTajemstvi) throws -> SymmetricKey {
+    /// `zalozit: false` (procesy na pozadí): chybějící klíč nezakládá, jinak by
+    /// hook při nečitelné Klíčence přepsal klíč a kopie by šla zahodit.
+    public static func klicKopie(_ u: UlozisteTajemstvi, zalozit: Bool = true) throws -> SymmetricKey {
         if let data = try u.cti("klic-kopie"), data.count == 32 { return SymmetricKey(data: data) }
+        guard zalozit else { throw ChybaTajemstvi.klicChybi }
         let klic = SymmetricKey(size: .bits256)
         try u.zapis("klic-kopie", klic.withUnsafeBytes { Data($0) })
         return klic

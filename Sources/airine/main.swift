@@ -46,18 +46,37 @@ func stdinJson() -> [String: Any] {
 }
 
 let domov = Domov()
-let tajemstvi = Tajemstvi.vychozi(domov)
+
+/// Proces na pozadí: hook, MCP server, tichá synchronizace. Nikdy neukáže okno
+/// Klíčenky a do Klíčenky nepíše. Když klíč bez okna nedostane, tiše skončí
+/// (hook bez výstupu, MCP odpoví „otevři lištu“). Okno smí ukázat jen lišta
+/// a ruční příkazy, které spustil člověk.
+let naPozadi = argumenty.contains("--hook") || argumenty.first == "mcp"
+    || (argumenty.first == "sync" && argumenty.contains("--tise"))
+if naPozadi { Tajemstvi.zakazOkna() }
+let tajemstvi = Tajemstvi.vychozi(domov, bezOkna: naPozadi)
+
+/// Co dostane agent při startu, když místní kopie nejde otevřít bez okna.
+let textZamceno = "# Airine: místní kopie je zamčená\nOtevři lištu Airine (ta se k Klíčence smí zeptat). Co platí zjistíš i nástrojem co_plati ve vzdáleném konektoru Airine."
 
 // Token z přihlášení v prohlížeči platí hodinu: před prací se serverem se
-// obnoví. Hooky na síť nečekají (odesílá `airine sync` na pozadí).
-if !argumenty.contains("--hook"), !["mcp", "prihlas", "odhlas"].contains(argumenty.first ?? ""),
+// obnoví. Procesy na pozadí ho neobnovují: obnova zapisuje do Klíčenky.
+if !naPozadi, !["prihlas", "odhlas"].contains(argumenty.first ?? ""),
    let n = try? Nastaveni.nacti(domov) {
     await Prihlaseni.obnovJeTreba(domov: domov, tajemstvi: tajemstvi, server: n.server)
 }
 
+@MainActor func otevriTise() -> (Kopie, Nastaveni)? {
+    try? (Kopie(domov: domov, klic: Tajemstvi.klicKopie(tajemstvi, zalozit: !naPozadi)), Nastaveni.nacti(domov))
+}
+
+/// Na pozadí bez kopie proces skončí s kódem 0 a bez okna.
 @MainActor func otevri() -> (Kopie, Nastaveni) {
-    do { return (try Kopie(domov: domov, klic: Tajemstvi.klicKopie(tajemstvi)), try Nastaveni.nacti(domov)) }
-    catch { chyba("Místní kopii nejde otevřít: \(error)") }
+    do { return (try Kopie(domov: domov, klic: Tajemstvi.klicKopie(tajemstvi, zalozit: !naPozadi)), try Nastaveni.nacti(domov)) }
+    catch {
+        if naPozadi { exit(0) }
+        chyba("Místní kopii nejde otevřít: \(error)")
+    }
 }
 
 @MainActor func token() -> String? {
@@ -142,7 +161,14 @@ case "doporuceni":
     let vse = prepinac("--vse")
     var cwd = volba("--cwd") ?? FileManager.default.currentDirectoryPath
     if hook, let c = stdinJson()["cwd"] as? String { cwd = c }
-    let (kopie, n) = otevri()
+    guard let (kopie, n) = otevriTise() else {
+        if hook {
+            let o: [String: Any] = ["hookSpecificOutput": ["hookEventName": "SessionStart", "additionalContext": textZamceno]]
+            print(String(decoding: try! JSONSerialization.data(withJSONObject: o), as: UTF8.self))
+            exit(0)
+        }
+        chyba("Místní kopii nejde otevřít (airine stav).")
+    }
     let projekt = vse ? nil : (try? kopie.projekt(pro: cwd)) ?? nil
     let text: String
     do { text = try Doporuceni(kopie: kopie, projekt: projekt).text(fronta: kopie.fronta().count) }
@@ -304,10 +330,15 @@ case "nahraj-obsah":
     } catch { chyba("Nahrání obsahu selhalo: \(error)") }
 
 case "mcp":
-    let (kopie, _) = otevri()
+    // Kopie se zkouší otevřít bez okna při startu a znovu při každém volání
+    // nástroje, dokud se nepodaří (lišta mezitím Klíčenku odemkne).
     let d = domov
-    let server = MistniMcp(kopie: kopie, synchronizuj: token().map { t in
-        { @Sendable in _ = try? await Synchronizace.spust(domov: d, kopie: kopie) { HttpAirine(nastaveni: $0, token: t) } }
+    let t = tajemstvi
+    let server = MistniMcp(otevri: {
+        try Kopie(domov: d, klic: Tajemstvi.klicKopie(t, zalozit: false))
+    }, synchronizuj: { kopie in
+        guard let td = try? t.cti("token"), let tok = String(data: td, encoding: .utf8), !tok.isEmpty else { return }
+        _ = try? await Synchronizace.spust(domov: d, kopie: kopie) { HttpAirine(nastaveni: $0, token: tok) }
     }, slozky: { (try? Nastaveni.nacti(d))?.slozky ?? [] }, zarizeni: { (try? Nastaveni.nacti(d))?.zarizeni })
     while let radek = readLine(strippingNewline: true) {
         if radek.isEmpty { continue }

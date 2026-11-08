@@ -4,17 +4,37 @@ import Foundation
 /// Claude Code i Cursor ho spouští jako `airine mcp`. Odpovídá z místní kopie,
 /// takže funguje i při výpadku Airine; hlášení jde do fronty.
 public final class MistniMcp: @unchecked Sendable {
-    let kopie: Kopie
-    let synchronizuj: (@Sendable () async -> Void)?
+    /// Otevře místní kopii. Server běží na pozadí a Klíčenku čte bez okna:
+    /// když kopie nejde otevřít, server dál odpovídá a nástroje vrátí radu
+    /// otevřít lištu. Další volání to zkusí znovu.
+    let otevri: @Sendable () throws -> Kopie
+    private var _kopie: Kopie?
+    private let zamek = NSLock()
+    let synchronizuj: (@Sendable (Kopie) async -> Void)?
     /// Složky pro Znalosti, čtené při každém hlášení (lišta je může změnit);
     /// `nil` = bez omezení.
     let slozky: @Sendable () -> [String]?
     let zarizeni: @Sendable () -> String?
 
-    public init(kopie: Kopie, synchronizuj: (@Sendable () async -> Void)? = nil, slozky: @escaping @Sendable () -> [String]? = { nil },
-                zarizeni: @escaping @Sendable () -> String? = { nil }) {
-        self.kopie = kopie; self.synchronizuj = synchronizuj; self.slozky = slozky; self.zarizeni = zarizeni
+    public init(otevri: @escaping @Sendable () throws -> Kopie, synchronizuj: (@Sendable (Kopie) async -> Void)? = nil,
+                slozky: @escaping @Sendable () -> [String]? = { nil }, zarizeni: @escaping @Sendable () -> String? = { nil }) {
+        self.otevri = otevri; self.synchronizuj = synchronizuj; self.slozky = slozky; self.zarizeni = zarizeni
     }
+
+    public convenience init(kopie: Kopie, synchronizuj: (@Sendable () async -> Void)? = nil, slozky: @escaping @Sendable () -> [String]? = { nil },
+                            zarizeni: @escaping @Sendable () -> String? = { nil }) {
+        self.init(otevri: { kopie }, synchronizuj: synchronizuj.map { s in { @Sendable _ in await s() } }, slozky: slozky, zarizeni: zarizeni)
+    }
+
+    /// Kopie, nebo nil, když ji zatím nejde otevřít bez okna.
+    var kopie: Kopie? {
+        zamek.lock(); defer { zamek.unlock() }
+        if let k = _kopie { return k }
+        _kopie = try? otevri()
+        return _kopie
+    }
+
+    static let zamceno = "Místní kopie Airine je zamčená. Otevři lištu Airine (ta se smí zeptat Klíčenky) a zkus to znovu. Co platí zjistíš i ve vzdáleném konektoru Airine."
 
     nonisolated(unsafe) static let nastroje: [[String: Any]] = [
         ["name": "co_plati",
@@ -30,7 +50,7 @@ public final class MistniMcp: @unchecked Sendable {
 
     public func instrukce() -> String {
         var t = "Airine je katalog znalostí firmy. Na začátku práce na projektu zavolej co_plati, po vytvoření nebo změně MD souboru či skillu nahlas_soubor."
-        if let n = kopie.navod { t += "\n\n" + n.obsah }
+        if let n = kopie?.navod { t += "\n\n" + n.obsah }
         return t
     }
 
@@ -67,19 +87,23 @@ public final class MistniMcp: @unchecked Sendable {
     }
 
     func zavolej(_ jmeno: String, _ arg: [String: Any]) async throws -> String {
+        guard Self.nastroje.contains(where: { $0["name"] as? String == jmeno }) else {
+            throw NSError(domain: "airine", code: 1, userInfo: [NSLocalizedDescriptionKey: "neznámý nástroj \(jmeno)"])
+        }
+        guard let kopie else { return Self.zamceno }
         switch jmeno {
         case "co_plati":
             let projekt = try (arg["projekt_id"] as? String) ?? (arg["cesta"] as? String).flatMap { try kopie.projekt(pro: $0) }
             // Bez lišty kopii nikdo neobnoví: starší než 5 minut se nejdřív
             // zkusí stáhnout. Bez spojení odpoví kopie, jaká je (stav k … to řekne).
             if kopie.posledniSynchronizace.map({ Date().timeIntervalSince($0) > Self.cerstvost }) ?? true {
-                await synchronizuj?()
+                await synchronizuj?(kopie)
             }
             return try Doporuceni(kopie: kopie, projekt: projekt).text(fronta: kopie.fronta().count)
         case "nahlas_soubor":
             guard let cesta = arg["cesta"] as? String else { return "Chybí cesta." }
             let v = try Nahlasovani(kopie: kopie, slozky: slozky(), zarizeni: zarizeni()).nahlas(cesta: cesta)
-            if case .zarazeno = v { await synchronizuj?() }
+            if case .zarazeno = v { await synchronizuj?(kopie) }
             switch v {
             case .zarazeno(let id, let otisk, let rada):
                 let odm = try kopie.fronta(vcetneOdmitnutych: true).filter { $0.hlaseni.id == id && $0.hlaseni.otisk == otisk }.compactMap(\.odmitnuto).flatMap(\.chyby)
