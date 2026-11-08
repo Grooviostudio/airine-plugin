@@ -39,8 +39,14 @@ public struct Doporuceni: Sendable {
         // Archivovaná karta je duplicita, kterou člověk schoval: agent ji nemá
         // používat, jen vědět, že ji jde vrátit.
         let zive = vse.filter { !$0.archivovana }
+        // Vypisuje se jen prvních 40: nahoru karty s popisem (agent z nich pozná,
+        // k čemu jsou), uvnitř podle poslední změny. Bez popisu bývají README
+        // archivů a pracovní poznámky (TIK-2026-0045).
         platne = zive.filter { $0.bez_prava != true && !nahrazenaId.contains($0.id) }
-            .sorted { ($0.updated_at ?? "") > ($1.updated_at ?? "") }
+            .sorted {
+                let (a, b) = ($0.popis?.isEmpty == false, $1.popis?.isEmpty == false)
+                return a != b ? a : ($0.updated_at ?? "") > ($1.updated_at ?? "")
+            }
         nahrazene = zive.filter { $0.bez_prava != true && nahrazenaId.contains($0.id) }
         archivovane = vse.filter { $0.archivovana && $0.bez_prava != true }
             .sorted { ($0.archivovano_at ?? "") > ($1.archivovano_at ?? "") }
@@ -74,9 +80,19 @@ public struct Doporuceni: Sendable {
             if let n = k.nahrazuje, let stara = nahrazene.first(where: { $0.id == n }) { r.append("  nahrazuje \(stara.name ?? stara.id), starou verzi nepoužívat") }
             if let f = k.fakta, !f.isEmpty { r.append("  " + f.sorted { $0.key < $1.key }.map { "\($0.key): \($0.value)" }.joined(separator: ", ")) }
             if k.rozpor == true { r.append("  ⚠ dvě verze v rozporu, rozhodne \(k.vlastnik_jmeno ?? "vlastník")") }
-            if k.jenNaJednomZarizeni { r.append("  ⚠ leží jen na jednom počítači, kolegové ho nevidí") }
-            if k.neniVAirine { r.append("  obsah zatím není v Airine, jen karta") }
-            if let m = k.mista?.first?.cesta { r.append("  \(m)") }
+            // Obsah ve Znalostech: číst přes `precti_soubor`, cesta na disku je jen
+            // původ (u dokumentů přesunutých 8. 11. 2026 v ní zbyl odkaz s id karty).
+            // „Jen na jednom počítači“ jen tam, kde obsah ve Znalostech chybí:
+            // jinak ho kolegové vidí a varování by lhalo (TIK-2026-0045).
+            let cesta = k.mista?.first?.cesta
+            if k.veZnalostech {
+                r.append("  ve Znalostech, čti precti_soubor \(k.id)" + (cesta.map { " (původ: \($0))" } ?? ""))
+                if k.neniVAirine { r.append("  místní verze se liší od té ve Znalostech") }
+            } else {
+                if k.jenNaJednomZarizeni { r.append("  ⚠ leží jen na jednom počítači, kolegové ho nevidí") }
+                if k.neniVAirine { r.append("  obsah zatím není v Airine, jen karta") }
+                if let m = cesta { r.append("  \(m)") }
+            }
         }
         if platne.count > 40 { r.append("… a dalších \(platne.count - 40), vypíše `airine doporuceni --vse`") }
         for k in bezPrava.prefix(10) { r.append("- \(k.name ?? "soubor"): bez přístupu, požádej o něj \(k.vlastnik_jmeno ?? "vlastníka")") }

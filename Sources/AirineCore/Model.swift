@@ -75,6 +75,10 @@ public struct Karta: Codable, Hashable, Sendable, Identifiable {
     /// Stejné signály jako serverové `doporuceni()`.
     public var jenNaJednomZarizeni: Bool { Set((mista ?? []).compactMap(\.zarizeni_id)).count == 1 }
     public var neniVAirine: Bool { ulozeny_otisk != otisk }
+    /// Obsah karty leží ve Znalostech (Airine má uloženou verzi). Agent ho čte
+    /// přes `precti_soubor`, ne z cesty na disku: od 8. 11. 2026 tam u dokumentů
+    /// přesunutých do Znalostí zůstal jen odkaz s id karty.
+    public var veZnalostech: Bool { ulozeny_otisk != nil }
     public var archivovana: Bool { archivovano_at != nil }
 }
 

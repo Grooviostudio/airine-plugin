@@ -461,6 +461,38 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
         #expect(o2.chyby.first?.zprava == #"{"fakta":16}"#)
     }
 
+    /// TIK-2026-0045: karta s obsahem ve Znalostech se čte přes precti_soubor,
+    /// cesta na Macu je jen původ a varování „jen na jednom počítači“ nelže.
+    @Test func doporuceniKartyVeZnalostech() async throws {
+        let k = try kopie(try docasnyDomov())
+        let jedno = [Misto(zarizeni_id: "z1", cesta: "Airine/Marketing/docs/vystupy.md", otisk: "o1", videno_at: "2026-11-08T10:00:00Z")]
+        var znalosti = Karta(id: "zn1", name: "vystupy", otisk: "o1", mista: jedno); znalosti.ulozeny_otisk = "o1"
+        var jinde = Karta(id: "zn2", name: "styl", popis: "Obrazový styl", otisk: "o3", mista: jedno); jinde.ulozeny_otisk = "o2"
+        let lokalni = Karta(id: "l1", name: "poznamky", otisk: "o9",
+                            mista: [Misto(zarizeni_id: "z1", cesta: "x/poznamky.md", otisk: "o9", videno_at: "2026-11-08T10:00:00Z")])
+        try k.ulozKarty([znalosti, jinde, lokalni])
+        let t = try Doporuceni(kopie: k, projekt: nil).text()
+        #expect(t.contains("ve Znalostech, čti precti_soubor zn1 (původ: Airine/Marketing/docs/vystupy.md)"))
+        #expect(t.contains("čti precti_soubor zn2") && t.contains("místní verze se liší od té ve Znalostech"))
+        #expect(!t.contains("\n  Airine/Marketing/docs/vystupy.md"))
+        // negativní: obsah ve Znalostech chybí → varování i cesta zůstanou
+        let radky = t.components(separatedBy: "\n")
+        let i = try #require(radky.firstIndex { $0.hasPrefix("- poznamky") })
+        #expect(radky[i + 1] == "  ⚠ leží jen na jednom počítači, kolegové ho nevidí")
+        #expect(radky[i + 2] == "  obsah zatím není v Airine, jen karta" && radky[i + 3] == "  x/poznamky.md")
+        #expect(t.components(separatedBy: "jen na jednom počítači").count == 2)   // jen u lokální karty
+    }
+
+    @Test func doporuceniNahoruKartySPopisem() async throws {
+        let k = try kopie(try docasnyDomov())
+        var stara = Karta(id: "s", name: "styl", popis: "Obrazový styl"); stara.updated_at = "2026-10-01T00:00:00Z"
+        var readme = Karta(id: "r", name: "README"); readme.updated_at = "2026-11-08T00:00:00Z"
+        var nova = Karta(id: "n", name: "market", popis: "Trh"); nova.updated_at = "2026-11-07T00:00:00Z"
+        var prazdny = Karta(id: "p", name: "x", popis: ""); prazdny.updated_at = "2026-11-09T00:00:00Z"
+        try k.ulozKarty([stara, readme, nova, prazdny])
+        #expect(try Doporuceni(kopie: k, projekt: nil).platne.map(\.id) == ["n", "s", "p", "r"])
+    }
+
     @Test func doporuceniUkazeJmenoVlastnika() async throws {
         let k = try kopie(try docasnyDomov())
         try k.ulozKarty([Karta(id: "b1", name: "smlouva", vlastnik_id: "u1", vlastnik_jmeno: "Eva", bez_prava: true)])

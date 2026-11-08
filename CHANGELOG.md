@@ -2,6 +2,11 @@
 
 ## 8. 11. 2026
 
+- **Karty ve Znalostech ukazují `precti_soubor`, ne cestu na disku.** U karty, jejíž
+  obsah je uložený v Airine, píše `co_plati` i hook „ve Znalostech, čti precti_soubor
+  <id>“ a cestu jen jako původ. Varování „leží jen na jednom počítači“ a „obsah zatím
+  není v Airine“ zůstávají jen u karet bez obsahu v Airine. Liší-li se místní verze,
+  řekne to. Prvních 40 platných karet je seřazených tak, že karty s popisem jdou nahoru.
 - **Víc workspace na jednom Macu (profily).** `airine profil pridej <id> --nazev JMÉNO`
   založí profil s vlastní místní kopií (`profily/<id>/`) a vlastními položkami v Klíčence
   (`token.<id>`, `klic-kopie.<id>`). `airine slozka <cesta> --profil <id>` přiřadí složku.
