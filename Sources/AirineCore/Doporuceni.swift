@@ -11,10 +11,21 @@ public struct Doporuceni: Sendable {
     public let archivovane: [Karta]
     public let stavK: Date?
     public let navod: Navod?
+    /// Propojený projekt, ke kterému zatím není žádná platná karta: místo
+    /// prázdné hlavičky se ukáže celý katalog (jen se `zalozni: true`).
+    public private(set) var prazdnyProjekt: String?
 
-    public init(kopie: Kopie, projekt: String?) throws {
-        self.projekt = projekt
+    /// `zalozni`: projekt bez platných karet ukáže celý katalog workspace,
+    /// ať agent nedostane prázdnou hlavičku (hook a `co_plati`).
+    public init(kopie: Kopie, projekt: String?, zalozni: Bool = false) throws {
         let vsechny = try kopie.karty()
+        if zalozni, let p = projekt, try Doporuceni(kopie: kopie, projekt: p).platne.isEmpty {
+            self = try Doporuceni(kopie: kopie, projekt: nil)
+            self.prazdnyProjekt = p
+            return
+        }
+        self.projekt = projekt
+        prazdnyProjekt = nil
         // Server „nahrazeno“ neposílá: karta je nahrazená, když na ni jiná živá
         // karta ukazuje přes nahrazuje (stejně jako `doporuceni()` v lib/katalog.js).
         let nahrazenaId = Set(vsechny.filter { $0.bez_prava != true && !$0.archivovana }.compactMap(\.nahrazuje))
@@ -49,7 +60,9 @@ public struct Doporuceni: Sendable {
     public func text(fronta: Int = 0, workspace: String? = nil) -> String {
         var r: [String] = []
         r.append("# Airine" + (workspace.map { " (workspace \($0))" } ?? "") + ": co platí" + (projekt == nil ? "" : " k projektu") + " (stav k \(stavK.map { Self.cas.string(from: $0) } ?? "nikdy, zatím bez synchronizace"))")
-        if projekt == nil {
+        if let p = prazdnyProjekt {
+            r.append("K propojenému projektu (\(p)) zatím nic nahlášeného. Ukazuju celý katalog" + (workspace.map { " workspace \($0)" } ?? "") + ".")
+        } else if projekt == nil {
             r.append("Složka není propojená s projektem v Airine (`airine propoj <projekt_id>`). Ukazuju celý katalog.")
         }
         if platne.isEmpty { r.append("K projektu zatím nic nahlášeného.") }

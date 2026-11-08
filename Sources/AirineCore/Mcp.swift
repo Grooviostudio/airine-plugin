@@ -106,7 +106,8 @@ public final class MistniMcp: @unchecked Sendable {
             if kopie.posledniSynchronizace.map({ Date().timeIntervalSince($0) > Self.cerstvost }) ?? true {
                 await synchronizuj?(kopie)
             }
-            return try Doporuceni(kopie: kopie, projekt: projekt).text(fronta: kopie.fronta().count, workspace: workspace)
+            // Projekt bez karet (výslovné projekt_id ne): celý katalog místo prázdné odpovědi.
+            return try Doporuceni(kopie: kopie, projekt: projekt, zalozni: arg["projekt_id"] == nil).text(fronta: kopie.fronta().count, workspace: workspace)
         case "nahlas_soubor":
             guard let cesta = arg["cesta"] as? String else { return "Chybí cesta." }
             let v = try Nahlasovani(kopie: kopie, slozky: slozky(), zarizeni: zarizeni()).nahlas(cesta: cesta)

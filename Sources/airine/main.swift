@@ -13,6 +13,7 @@ airine — plugin Airine pro Claude Code a Cursor
   airine sync                     odešle frontu a stáhne změny katalogu
   airine stav                     poslední synchronizace, fronta, odmítnutá hlášení
   airine propoj <projekt_id> [--slozka CESTA]
+  airine propoj --zrus [--slozka CESTA]   složka už nepatří žádnému projektu
   airine doporuceni [--cwd CESTA] [--vse] [--hook]
   airine nahlas <cesta> | --hook  zařadí soubor do fronty hlášení
   airine vyres <id>               po sloučení rozporu: další hlášení naváže na verzi v Airine
@@ -190,7 +191,15 @@ case "stav":
 
 case "propoj":
     let slozka = volba("--slozka") ?? FileManager.default.currentDirectoryPath
-    guard let projekt = argumenty.first else { chyba("airine propoj <projekt_id> [--slozka CESTA]") }
+    if prepinac("--zrus") {
+        let (kopie, _) = otevri()
+        do {
+            let byl = try kopie.zrusPropojeni(slozka: slozka)
+            print(byl.map { "\(slozka) už není propojená (byl projekt \($0)). Hlavička ukáže celý katalog." } ?? "\(slozka) nebyla propojená s projektem.")
+        } catch { chyba("\(error)") }
+        exit(0)
+    }
+    guard let projekt = argumenty.first else { chyba("airine propoj <projekt_id> [--slozka CESTA] | --zrus") }
     let (kopie, _) = otevri()
     do { try kopie.propoj(slozka: slozka, projekt: projekt) } catch { chyba("\(error)") }
     print("\(slozka) → projekt \(projekt)")
@@ -210,7 +219,7 @@ case "doporuceni":
     }
     let projekt = vse ? nil : (try? kopie.projekt(pro: cwd)) ?? nil
     let text: String
-    do { text = try Doporuceni(kopie: kopie, projekt: projekt).text(fronta: kopie.fronta().count, workspace: nazevWorkspace) }
+    do { text = try Doporuceni(kopie: kopie, projekt: projekt, zalozni: !vse).text(fronta: kopie.fronta().count, workspace: nazevWorkspace) }
     catch { if hook { exit(0) }; chyba("\(error)") }
     if hook {
         // SessionStart: text jde do kontextu agenta. Synchronizace běží vedle.

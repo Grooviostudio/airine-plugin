@@ -15,6 +15,12 @@
   (`LAContext.interactionNotAllowed`) a do Klíčenky nepíšou: nezakládají klíč kopie
   a neobnovují token. Zamčená kopie: hook to řekne agentovi, MCP odpoví a zkusí to znovu
   při dalším volání. Dřív se okno ukazovalo při každém sezení a po každé aktualizaci.
+- **Projekt bez karet neukáže prázdnou hlavičku.** Má-li propojený projekt 0 platných karet,
+  hook i `co_plati` bez argumentů ukážou celý katalog workspace a řeknou proč. Výslovné
+  `projekt_id` v `co_plati` dál vrátí jen projekt.
+- **`airine propoj --zrus [--slozka CESTA]`** zruší propojení složky s projektem.
+- **Propojení složky platí i přes symlink** (~/Desktop/X → ~/Developer/X), stejně jako výběr
+  profilu. Dřív se přes odkaz projekt nenašel a ukázal se celý katalog.
 - README: víc workspace a jak plugin vypnout.
 
 ## 7. 11. 2026

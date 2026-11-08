@@ -121,6 +121,38 @@ import Testing
         try k.propoj(slozka: "/prace/a", projekt: "p1")
         let m = MistniMcp(otevri: { k }, workspace: "Firma A", vychoziCesta: "/prace/a/repo")
         let odp = try #require(await m.zpracuj(#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"co_plati","arguments":{}}}"#))
-        #expect(odp.contains("workspace Firma A") && odp.contains("k projektu"))
+        // Projekt bez karet: co_plati bez argumentů ukáže celý katalog a řekne proč.
+        #expect(odp.contains("workspace Firma A") && odp.contains("K propojenému projektu (p1)"))
+    }
+
+    @Test func propojeniPresSymlink() throws {
+        let d = try docasnyDomov(); let k = try kopie(d)
+        let cil = d.slozka.appendingPathComponent("Developer/Firma", isDirectory: true)
+        try FileManager.default.createDirectory(at: cil.appendingPathComponent("repo"), withIntermediateDirectories: true)
+        let odkaz = d.slozka.appendingPathComponent("Plocha-Firma")
+        try FileManager.default.createSymbolicLink(at: odkaz, withDestinationURL: cil)
+        try k.propoj(slozka: cil.path, projekt: "p1")
+        #expect(try k.projekt(pro: odkaz.path) == "p1")
+        #expect(try k.projekt(pro: odkaz.path + "/repo") == "p1")
+        #expect(try k.koren(pro: odkaz.path + "/repo/a.md") == cil.standardizedFileURL.path)
+        // Zrušení přes odkaz zruší uložené propojení cíle.
+        #expect(try k.zrusPropojeni(slozka: odkaz.path) == "p1")
+        #expect(try k.projekt(pro: cil.path) == nil)
+        #expect(try k.zrusPropojeni(slozka: cil.path) == nil)
+    }
+
+    @Test func prazdnyProjektUkazeCelyKatalog() throws {
+        let k = try kopie(try docasnyDomov())
+        try k.ulozKarty([Karta(id: "a", name: "produkt"), Karta(id: "b", name: "brief", projekt_id: "p2")])
+        let z = try Doporuceni(kopie: k, projekt: "p1", zalozni: true)
+        #expect(z.prazdnyProjekt == "p1" && z.projekt == nil && Set(z.platne.map(\.id)) == ["a", "b"])
+        let t = z.text(workspace: "Firma A")
+        #expect(t.hasPrefix("# Airine (workspace Firma A): co platí (stav"))
+        #expect(t.contains("K propojenému projektu (p1) zatím nic nahlášeného. Ukazuju celý katalog workspace Firma A."))
+        // Projekt s kartami: jen jeho, žádná záloha.
+        let p = try Doporuceni(kopie: k, projekt: "p2", zalozni: true)
+        #expect(p.prazdnyProjekt == nil && p.platne.map(\.id) == ["b"])
+        // Bez `zalozni` zůstává prázdný (výslovné projekt_id v co_plati).
+        #expect(try Doporuceni(kopie: k, projekt: "p1").platne.isEmpty)
     }
 }

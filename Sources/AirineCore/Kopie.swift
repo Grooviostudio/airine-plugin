@@ -99,17 +99,33 @@ public final class Kopie: @unchecked Sendable {
         try nastavStav("slozky", s)
     }
 
-    /// Nejdelší shoda prefixu cesty.
+    /// Zruší propojení složky s projektem (i když bylo uložené přes symlink).
+    /// Vrací id projektu, které složka měla; `nil` = propojená nebyla.
+    @discardableResult
+    public func zrusPropojeni(slozka: String) throws -> String? {
+        var s = try slozky()
+        let k = Profily.klic(slozka)
+        guard let klic = s.keys.first(where: { Profily.klic($0) == k }) else { return nil }
+        let projekt = s.removeValue(forKey: klic)
+        try nastavStav("slozky", s)
+        return projekt
+    }
+
+    /// Nejdelší shoda prefixu cesty. Obě strany se porovnávají se symlinky
+    /// rozvedenými a v jednom unicode tvaru (~/Desktop/X → ~/Developer/X),
+    /// stejně jako výběr profilu.
     public func projekt(pro cesta: String) throws -> String? {
-        let c = URL(fileURLWithPath: cesta).standardizedFileURL.path
-        return try slozky().filter { c == $0.key || c.hasPrefix($0.key + "/") }
-            .max { $0.key.count < $1.key.count }?.value
+        let c = Profily.klic(cesta)
+        return try slozky().map { (Profily.klic($0.key), $0.value) }
+            .filter { c == $0.0 || c.hasPrefix($0.0 + "/") }
+            .max { $0.0.count < $1.0.count }?.1
     }
 
     /// Kořen pro dohledání wikilinků: nejdelší propojená složka, ve které soubor leží.
     public func koren(pro cesta: String) throws -> String? {
-        let c = URL(fileURLWithPath: cesta).standardizedFileURL.path
-        return try slozky().keys.filter { c.hasPrefix($0 + "/") }.max { $0.count < $1.count }
+        let c = Profily.klic(cesta)
+        return try slozky().keys.map { ($0, Profily.klic($0)) }.filter { c.hasPrefix($0.1 + "/") }
+            .max { $0.1.count < $1.1.count }?.0
     }
 
     // MARK: fronta
