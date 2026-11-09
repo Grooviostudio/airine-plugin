@@ -47,6 +47,9 @@ public struct Skilly: Sendable {
         public var kolize: [String] = []          // složka stejného jména, kterou plugin nevytvořil
         public var ponechane: [String] = []       // skill už nemá být, ale člověk ho upravil
         public var rozpory: [String] = []         // místní úprava v rozporu se serverem
+        /// Skill už leží na disku pod jiným jménem s `metadata.airine-id` téže
+        /// karty (člověk ho tam dal sám). Plugin ho nespravuje a nezdvojuje.
+        public var mistni: [String] = []
         public var chyby: [String] = []
 
         public var nic: Bool { self == Vysledek() }
@@ -89,6 +92,8 @@ public struct Skilly: Sendable {
         let chteneId = Set(chtene.map(\.id))
         let hlasic = Nahlasovani(kopie: kopie)
         let fm = FileManager.default
+        let spravovane = Set(ev.values.map { URL(fileURLWithPath: $0.cesta).standardizedFileURL.path })
+        let naDisku = Self.mistniSkilly(v: slozka, krome: spravovane)
 
         for k in chtene.sorted(by: { ($0.name ?? "") < ($1.name ?? "") }) {
             let jmeno = k.name!, cil = k.ulozeny_otisk!
@@ -120,7 +125,9 @@ public struct Skilly: Sendable {
                 }
                 continue
             }
-            // Ještě ho nemáme: nová složka, jen když je jméno volné.
+            // Ještě ho nemáme. Leží-li už na disku s id této karty, je člověka.
+            if let jinde = naDisku[k.id] { v.mistni.append(jinde); continue }
+            // Nová složka, jen když je jméno volné.
             let dir = slozka.appendingPathComponent(jmeno, isDirectory: true)
             let url = dir.appendingPathComponent("SKILL.md")
             if fm.fileExists(atPath: dir.path) {
@@ -151,6 +158,20 @@ public struct Skilly: Sendable {
         }
         try kopie.nastavStav("skilly", ev)
         return v
+    }
+
+    /// Skilly ve složce, které plugin nevytvořil: `metadata.airine-id` → jméno složky.
+    static func mistniSkilly(v slozka: URL, krome: Set<String>) -> [String: String] {
+        let fm = FileManager.default
+        var m: [String: String] = [:]
+        for jmeno in (try? fm.contentsOfDirectory(atPath: slozka.path)) ?? [] where !jmeno.hasPrefix(".") {
+            let url = slozka.appendingPathComponent(jmeno).appendingPathComponent("SKILL.md")
+            guard !krome.contains(url.standardizedFileURL.path),
+                  let text = try? String(contentsOf: url, encoding: .utf8),
+                  let id = Hlavicka.precti(text).meta["id"], !id.isEmpty else { continue }
+            m[id] = m[id] ?? jmeno
+        }
+        return m
     }
 
     /// Stáhne verzi `otisk` a zapíše ji. `jenKdyz`: soubor se mezitím nesmí

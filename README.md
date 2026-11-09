@@ -78,7 +78,8 @@ v Klíčence se vypnutím nemažou.
   rozhoduje Airine (práva ve Znalostech). Přepíše a smaže jen skilly, které sám vytvořil,
   a jen když je nikdo neupravil. Místní úpravu nepřepíše: pošle ji jako novou verzi
   a případný rozpor vyřeší Airine. Složku stejného jména, kterou nevytvořil, nechá být
-  a ohlásí kolizi. Zatím jen skilly z jednoho souboru (`SKILL.md`). Vypnout jde
+  a ohlásí kolizi. Skill, který už na disku leží pod jiným jménem s `metadata.airine-id` téže
+  karty, je tvůj: plugin ho nezdvojí a nesahá na něj. Zatím jen skilly z jednoho souboru (`SKILL.md`). Vypnout jde
   `airine skilly ne`, výpis stažených `airine skilly`.
 - Hlásí jen soubory ve složkách, které si vybereš (dialog v liště nebo `airine slozky pridej
   CESTA`). Dokud žádnou nevybereš, nehlásí nic. Pracovní kopie repozitářů (`.claude/worktrees`)

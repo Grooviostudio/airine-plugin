@@ -124,6 +124,18 @@ import Testing
         #expect(p.text("nabidka") == "můj vlastní")
     }
 
+    @Test func mistniSkillSeStejnymIdSeNezdvoji() async throws {
+        let p = try prostredi()
+        let vlastni = "---\nname: muj-postup\nmetadata:\n  airine-id: \"s1\"\ndescription: x\n---\nmůj\n"
+        try FileManager.default.createDirectory(at: p.soubor("muj-postup").deletingLastPathComponent(), withIntermediateDirectories: true)
+        try vlastni.write(to: p.soubor("muj-postup"), atomically: true, encoding: .utf8)
+        await p.server.pridejSkill("s1", "skill-muj-postup", Self.v1)
+        let v = try await p.sync()
+        #expect(v.mistni == ["muj-postup"] && v.nove.isEmpty && v.kolize.isEmpty)
+        #expect(p.text("skill-muj-postup") == nil && p.text("muj-postup") == vlastni)
+        #expect(try Skilly.evidence(p.k).isEmpty)
+    }
+
     @Test func vypnuteAOfflineNicNemeni() async throws {
         let p = try prostredi()
         await p.server.pridejSkill("s1", "nabidka", Self.v1)

@@ -7,7 +7,8 @@
   Evidence v místní kopii určuje, co plugin vytvořil: jen to smí přepsat nebo smazat (odebrané
   právo, smazaná, nahrazená karta), a jen neupravené. Místní úprava odejde jako nová verze
   s `otisk_predchozi` poslední stažené, rozpor řeší server. Cizí složka stejného jména zůstane
-  a hlásí se jako kolize. Více profilů píše do jedné složky, první zapsaný vyhrává.
+  a hlásí se jako kolize. Skill, který už na disku leží pod jiným jménem s `metadata.airine-id`
+  téže karty, se nezdvojí a plugin ho nespravuje. Více profilů píše do jedné složky, první zapsaný vyhrává.
   `airine skilly [ano|ne]`, `AIRINE_SKILLY` přepíše cestu. Mimo rozsah: skilly se skripty
   a přílohami.
 
