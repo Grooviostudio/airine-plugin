@@ -73,6 +73,13 @@ v Klíčence se vypnutím nemažou.
 
 ## Co dělá a co ne
 
+- Skilly firmy: karty typu `skill`, které smíš číst, stáhne při synchronizaci do
+  `~/.claude/skills/<name>/SKILL.md` a drží je aktuální podle otisku. Kdo skill dostane,
+  rozhoduje Airine (práva ve Znalostech). Přepíše a smaže jen skilly, které sám vytvořil,
+  a jen když je nikdo neupravil. Místní úpravu nepřepíše: pošle ji jako novou verzi
+  a případný rozpor vyřeší Airine. Složku stejného jména, kterou nevytvořil, nechá být
+  a ohlásí kolizi. Zatím jen skilly z jednoho souboru (`SKILL.md`). Vypnout jde
+  `airine skilly ne`, výpis stažených `airine skilly`.
 - Hlásí jen soubory ve složkách, které si vybereš (dialog v liště nebo `airine slozky pridej
   CESTA`). Dokud žádnou nevybereš, nehlásí nic. Pracovní kopie repozitářů (`.claude/worktrees`)
   a skryté složky nehlásí nikdy, kromě míst se skills a pravidly agentů
@@ -152,7 +159,7 @@ AIRINE_KLICE=soubor swift test -Xswiftc -F$F -Xswiftc -plugin-path -Xswiftc $P -
 Plugin mluví s Airine přes `/api/katalog/*` s osobním tokenem (`x-api-key`) a hlavičkou
 zařízení `x-airine-zarizeni`. Token je osobní token z Airine předaný `airine prihlas`
 na stdin. Přihlášení v prohlížeči (OAuth s PKCE, návrat na `http://127.0.0.1:<port>/prihlaseni`)
-je v kódu hotové, ale vypnuté: server token z OAuth zatím pouští jen na `/mcp`. Hlášení se páruje podle (id, otisk), takže opakované
+je v kódu hotové, ale vypnuté: server token z OAuth zatím pouští jen na `/mcp`. Skilly se stahují z `GET /api/katalog/:id/obsah?otisk=…`. Hlášení se páruje podle (id, otisk), takže opakované
 odeslání téže verze nic nezdvojí. Souběžná změna ze dvou zařízení skončí jako rozpor,
 nic se tiše nepřepíše.
 

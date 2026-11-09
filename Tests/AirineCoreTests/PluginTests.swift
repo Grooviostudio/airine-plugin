@@ -164,6 +164,26 @@ actor MockServer: AirineAPI {
         return o
     }
 
+    /// `GET /api/katalog/:id/obsah?otisk=`: jen uložená verze a jen s právem.
+    var stazeniObsahu = 0
+    func obsah(id: String, otisk: String) async throws -> Data {
+        guard online else { throw ChybaServeru.bezSpojeni }
+        if bezPrava.contains(id) { throw ChybaServeru.bezPravaKarty }
+        guard let d = obsah["\(id):\(otisk)"] else { throw ChybaServeru.jine(404, "obsah") }
+        stazeniObsahu += 1
+        return d
+    }
+
+    /// Skill s obsahem v Airine (nová karta nebo nová verze z Airine).
+    func pridejSkill(_ id: String, _ name: String, _ text: String, nahrazuje: String? = nil) {
+        let d = Data(text.utf8), o = Otisk.sha256(d)
+        var k = karty[id] ?? Karta(id: id, name: name, typ: "skill", nahrazuje: nahrazuje)
+        k.otisk = o; k.ulozeny_otisk = o; k.rozpor = nil
+        obsah["\(id):\(o)"] = d
+        karty[id] = k; verze[id, default: []].append(o); zmena(id)
+    }
+    func zmenTyp(_ id: String, _ typ: String) { karty[id]?.typ = typ; zmena(id) }
+
     /// Jako `katalog_archivuj()`: jen stav karty, hlášení archiv nemění.
     func archiv(karty ids: [String], archivovat: Bool) async throws -> Int {
         guard online else { throw ChybaServeru.bezSpojeni }

@@ -19,6 +19,7 @@ airine — plugin Airine pro Claude Code a Cursor
   airine vyres <id>               po sloučení rozporu: další hlášení naváže na verzi v Airine
   airine vrat <id> [<id>…]        vrátí archivované karty mezi platné
   airine obsah [ano|ne]           posílat s kartou i obsah souboru (výchozí ano)
+  airine skilly [ano|ne]          skilly firmy v ~/.claude/skills (výchozí ano), bez argumentu výpis
   airine slozky [pridej CESTA…] [--zrus CESTA]
                                   složky pro Znalosti: hlásí se jen soubory v nich
   airine porovnej [--zkouska]     projde vybrané složky a zařadí změněné soubory (jako lišta po startu)
@@ -173,6 +174,7 @@ case "sync":
             if !v.rozpory.isEmpty { print("Rozpory: \(v.rozpory.joined(separator: ", "))") }
             if v.neprihlasen { print("Token neplatí nebo nemáš modul Znalosti.") }
             if let s = v.strop { print(s.zprava(ceka: v.cekaNadStropem)) }
+            if let s = v.skilly?.shrnuti { print(s) }
         }
     } catch { if !tise { chyba("Synchronizace selhala: \(error)") } }
 
@@ -285,6 +287,23 @@ case "obsah":
     }
     if argumenty.first != nil { do { try n.uloz(domov) } catch { chyba("Nastavení nejde uložit: \(error)") } }
     print("Posílat obsah souborů: \(n.posilatObsah ? "ano" : "ne")")
+
+case "skilly":
+    var (kopie, n) = otevri()
+    switch argumenty.first {
+    case "ano": n.skilly = true
+    case "ne": n.skilly = false
+    case nil: break
+    default: chyba("airine skilly [ano|ne]")
+    }
+    if argumenty.first != nil { do { try n.uloz(domov) } catch { chyba("Nastavení nejde uložit: \(error)") } }
+    print("Skilly firmy do \(Skilly.vychoziSlozka.path): \(n.skilly ? "ano" : "ne")")
+    let ev = (try? Skilly.evidence(kopie)) ?? [:]
+    for z in ev.values.sorted(by: { $0.name < $1.name }) { print("  \(z.name)  \(z.cesta)") }
+    if ev.isEmpty { print("  zatím žádné (stáhnou se při synchronizaci)") }
+    if argumenty.first == "ne" && !ev.isEmpty {
+        print("Stažené skilly zůstávají na disku a už se neaktualizují. Smazat je můžeš ručně.")
+    }
 
 case "slozky":
     var n: Nastaveni

@@ -35,12 +35,13 @@ public struct Synchronizace: Sendable {
         public var strop: StropSouboru?          // katalog je plný: nové karty čekají ve frontě
         public var cekaNadStropem = 0
         public var preskoceno = 0                // server vrátil neznámou chybu, hlášení zkusí příště
+        public var skilly: Skilly.Vysledek?      // nil = skilly se neřešily (offline, vypnuté)
     }
 
     /// Běh se vším, co potřebuje lišta i příkaz: když server řekne, že uuid
     /// zařízení patří jinému členovi, vezme si nové a zkusí to jednou znovu.
     /// Zařízení jde v hlavičce požadavku, fronta se proto nepřepisuje.
-    public static func spust(domov: Domov, kopie: Kopie, pauza: Duration = .zero,
+    public static func spust(domov: Domov, kopie: Kopie, pauza: Duration = .zero, skilly: URL? = nil,
                              api: @Sendable (Nastaveni) -> AirineAPI) async throws -> Vysledek {
         var n = try Nastaveni.nacti(domov)
         var v = try await Synchronizace(kopie: kopie, api: api(n), obsah: n.posilatObsah, vynechat: n.vynechatObsah, pauza: pauza).probehni()
@@ -48,6 +49,16 @@ public struct Synchronizace: Sendable {
             n.zarizeni = UUID().uuidString.lowercased()
             try n.uloz(domov)
             v = try await Synchronizace(kopie: kopie, api: api(n), obsah: n.posilatObsah, vynechat: n.vynechatObsah, pauza: pauza).probehni()
+        }
+        // Skilly až po úplném stažení změn: neúplná kopie by vypadala jako odebrané skilly.
+        if n.skilly && v.online && !v.neprihlasen && !v.ciziZarizeni {
+            let s = try await Skilly(kopie: kopie, api: api(n), slozka: skilly ?? Skilly.vychoziSlozka).probehni()
+            v.skilly = s
+            // Místní úpravy skillů odejdou hned, ne až příští synchronizací.
+            if !s.nahlasene.isEmpty {
+                let w = try await Synchronizace(kopie: kopie, api: api(n), obsah: n.posilatObsah, vynechat: n.vynechatObsah, pauza: pauza).probehni()
+                v.odeslano += w.odeslano; v.obsahu += w.obsahu; v.rozpory += w.rozpory
+            }
         }
         return v
     }

@@ -20,6 +20,8 @@ public protocol AirineAPI: Sendable {
     func nahrajDavku(_ soubory: [SouborDavky]) async throws -> [VysledekDavky]
     /// Přeskakované složky a stropy dávky z GET /api/katalog/import.
     func nastaveniImportu() async throws -> NastaveniImportu
+    /// Obsah verze karty (GET /api/katalog/:id/obsah?otisk=…). Práva hlídá server.
+    func obsah(id: String, otisk: String) async throws -> Data
 }
 
 /// Jeden soubor v dávce obsahu: hlášení karty a text, jehož SHA-256 je otisk.
@@ -100,6 +102,8 @@ extension AirineAPI {
     public func nahrajDavku(_ soubory: [SouborDavky]) async throws -> [VysledekDavky] { throw ChybaServeru.jine(404, "obsah-davka") }
 
     public func nastaveniImportu() async throws -> NastaveniImportu { NastaveniImportu() }
+
+    public func obsah(id: String, otisk: String) async throws -> Data { throw ChybaServeru.jine(404, "obsah") }
 
     /// Server bez téhle cesty: zmizelá místa počkají ve frontě.
     public func zmizela(_ mista: [ZmizeleMisto]) async throws -> Int { throw ChybaServeru.jine(404, "zmizela") }
@@ -197,6 +201,21 @@ public struct HttpAirine: AirineAPI {
             return .odmitnuto((try? JSONDecoder().decode(Odmitnuti.self, from: data))
                 ?? Odmitnuti(chyby: [ChybaPole(pole: "?", zprava: "neplatné hlášení", kod: nil)]))
         default: return neocekavany(data, kod)
+        }
+    }
+
+    public func obsah(id: String, otisk: String) async throws -> Data {
+        let cesta = "api/katalog/\(id)/obsah"
+        var c = URLComponents(url: zaklad.appendingPathComponent(cesta), resolvingAgainstBaseURL: false)!
+        c.queryItems = [URLQueryItem(name: "otisk", value: otisk)]
+        var r = pozadavek(cesta)
+        r.url = c.url
+        r.timeoutInterval = 30
+        let (data, kod) = try await posli(r)
+        switch kod {
+        case 200..<300: return data
+        case 403: throw ChybaServeru.bezPravaKarty
+        default: throw Self.neocekavany(data, kod)
         }
     }
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## 9. 11. 2026
+
+- **Skilly firmy z Airine v Claude Code.** Synchronizace stáhne karty typu `skill`, které
+  člen smí číst, do `~/.claude/skills/<name>/SKILL.md` a aktualizuje je podle otisku.
+  Evidence v místní kopii určuje, co plugin vytvořil: jen to smí přepsat nebo smazat (odebrané
+  právo, smazaná, nahrazená karta), a jen neupravené. Místní úprava odejde jako nová verze
+  s `otisk_predchozi` poslední stažené, rozpor řeší server. Cizí složka stejného jména zůstane
+  a hlásí se jako kolize. Více profilů píše do jedné složky, první zapsaný vyhrává.
+  `airine skilly [ano|ne]`, `AIRINE_SKILLY` přepíše cestu. Mimo rozsah: skilly se skripty
+  a přílohami.
+
 ## 8. 11. 2026
 
 - **Karty ve Znalostech ukazují `precti_soubor`, ne cestu na disku.** U karty, jejíž
