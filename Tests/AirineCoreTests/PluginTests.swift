@@ -29,6 +29,7 @@ actor MockServer: AirineAPI {
     func pridej(_ k: Karta) { karty[k.id] = k; verze[k.id] = [k.otisk ?? ""]; zmena(k.id) }
     /// Změna popisu v Airine (agent přes MCP, člověk v Revizi).
     func nastavPopis(_ id: String, _ p: String) { karty[id]?.popis = p; zmena(id) }
+    func nastavTyp(_ id: String, _ t: String) { karty[id]?.typ = t; zmena(id) }
 
     func zmena(_ id: String) { seq += 1; log.append((seq, id)) }
 
@@ -62,6 +63,7 @@ actor MockServer: AirineAPI {
         if h.name == nil || h.name!.isEmpty { throw ChybaServeru.odmitnuto(Odmitnuti(chyby: [ChybaPole(pole: "name", zprava: "chybí", kod: "chybi")])) }
         if verze[h.id]?.contains(h.otisk) == true { return OdpovedHlaseni(stav: .uz_prijato, id: h.id, otisk: h.otisk) }
         if karty[h.id] == nil, let jine = prevzit[h.otisk] { return OdpovedHlaseni(stav: .uz_prijato, id: jine, otisk: h.otisk) }
+        let nova = karty[h.id] == nil
         var k = karty[h.id] ?? Karta(id: h.id, name: h.name ?? "")
         let rozpor = k.otisk != nil && h.otisk_predchozi != k.otisk
         verze[h.id, default: []].append(h.otisk)
@@ -69,7 +71,9 @@ actor MockServer: AirineAPI {
             k.rozpor = true
         } else {
             k.rozpor = nil; k.name = h.name ?? k.name; if let p = h.popis { k.popis = p }; k.projekt_id = h.projekt_id; k.otisk = h.otisk
-            k.mista = [Misto(zarizeni_id: zarizeni, cesta: h.cesta, otisk: h.otisk)]; k.typ = h.typ; k.nahrazuje = h.nahrazuje
+            k.mista = [Misto(zarizeni_id: zarizeni, cesta: h.cesta, otisk: h.otisk)]; k.nahrazuje = h.nahrazuje
+            // Jako katalog_hlaseni (291): typ z hlavičky mění, návrh jen u nové karty.
+            if let t = h.typ, !t.isEmpty { k.typ = t } else if nova { k.typ = h.typ_navrh ?? "poznamky" }
             k.fakta = h.fakta
         }
         karty[h.id] = k
@@ -603,7 +607,7 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
         guard case .zarazeno(let id, _, let rada) = v else { Issue.record("nezařazeno: \(v)"); return }
         #expect(try String(contentsOfFile: cesta, encoding: .utf8) == telo)
         let h = try #require(try k.fronta().first?.hlaseni)
-        #expect(h.name == "zapis-schuzky" && h.typ == "zapis" && h.popis == nil, "cizí description není naše")
+        #expect(h.name == "zapis-schuzky" && h.typ == nil && h.typ_navrh == "zapis" && h.popis == nil, "cizí description není naše")
         #expect(rada?.contains("bez popisu") == true && v.proAgenta == rada)
         // Druhé uložení beze změny = táž karta podle cesty, nic nového.
         #expect(try Nahlasovani(kopie: k).nahlas(cesta: cesta) == .beze_zmeny)
@@ -632,7 +636,7 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
         try "jiný text\n".write(toFile: cesta, atomically: true, encoding: .utf8)
         guard case .zarazeno(_, _, let rada) = try Nahlasovani(kopie: k).nahlas(cesta: cesta) else { Issue.record(""); return }
         let h = try #require(try k.fronta().last?.hlaseni)
-        #expect(h.popis == nil && h.typ == "postup", "popis bez hlavičky se neposílá, server ho nechá")
+        #expect(h.popis == nil && h.typ == nil && h.typ_navrh == "postup", "popis ani typ bez hlavičky se neposílá, server je nechá")
         #expect(rada == nil)
     }
 
@@ -650,6 +654,23 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
         #expect(try k.fronta().last?.hlaseni.popis == nil)
         _ = try await Synchronizace(kopie: k, api: server).probehni()
         #expect(await server.karty[id]?.popis == "Scénář od agenta")
+    }
+
+    /// TIK-0070: typ nastavený agentem v Airine nepřepíše typ odvozený z cesty.
+    /// Nová karta bez hlavičky typ z cesty dostane (návrh), existující si ho nechá.
+    @Test func typOdAgentaPrezijeHlaseniBezHlavicky() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        let cesta = try soubor(d, "Schůzky/Zápis schůzky.md", "jen text\n")
+        guard case .zarazeno(let id, _, _) = try Nahlasovani(kopie: k).nahlas(cesta: cesta) else { Issue.record(""); return }
+        let navrh = try #require(try k.fronta().first?.hlaseni.typ_navrh)
+        _ = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(await server.karty[id]?.typ == navrh, "nová karta dostane typ z cesty")
+        await server.nastavTyp(id, "brief")
+        try "jiný text\n".write(toFile: cesta, atomically: true, encoding: .utf8)
+        guard case .zarazeno = try Nahlasovani(kopie: k).nahlas(cesta: cesta) else { Issue.record(""); return }
+        #expect(try k.fronta().last?.hlaseni.typ == nil)
+        _ = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(await server.karty[id]?.typ == "brief")
     }
 
     /// Popis, který hlavička opravdu má, se pošle a změní kartu.

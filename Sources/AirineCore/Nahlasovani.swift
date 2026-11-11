@@ -141,12 +141,15 @@ public struct Nahlasovani: Sendable {
         let propojeny = try kopie.projekt(pro: url.deletingLastPathComponent().path)
         var k = h.karta(skillSouborem: skill)
         if !nase && !k.skill { k.name = nil; k.popis = nil }
-        // Co hlavička neříká: u známé karty platí, co má karta (typ a vazby
-        // z Airine se novou verzí nemažou), jinak se to odvodí z cesty jako
-        // u importu. Popis se nevymýšlí, karta bez popisu je v pořádku.
+        // Co hlavička neříká: u známé karty platí, co má karta (vazby z Airine
+        // se novou verzí nemažou), jinak se to odvodí z cesty jako u importu.
+        // Popis se nevymýšlí, karta bez popisu je v pořádku.
+        // Typ jde jako `typ` jen z hlavičky. Odhad z místní kopie nebo z cesty
+        // jde jako `typ_navrh`: server ho vezme jen u nové karty, existující si
+        // typ nechá (TIK-0070, typ nastavený agentem v Airine se nepřepíše).
         let znama = znamaKarta?.bez_prava == true ? nil : znamaKarta
         let jmeno = (k.name?.isEmpty == false ? k.name : nil) ?? znama?.name ?? Self.jmenoZCesty(url.path)
-        let typ = k.typ ?? znama?.typ ?? Self.typZCesty(url.path, koren: korenSlozek(url.path))
+        let typNavrh = k.typ == nil ? (znama?.typ ?? Self.typZCesty(url.path, koren: korenSlozek(url.path))) : nil
         // Popis jde do hlášení, jen když ho hlavička opravdu má. Chybějící klíč
         // server bere jako „popis neměnit“; kdyby plugin poslal popis z místní
         // kopie (nebo prázdný, když kartu ještě nezná), přepsal by popis, který
@@ -159,7 +162,7 @@ public struct Nahlasovani: Sendable {
             id: id,
             name: jmeno,
             popis: popisZHlavicky,
-            typ: typ,
+            typ: k.typ,
             klient_id: k.klient ?? znama?.klient_id,
             projekt_id: projekt,
             slozka_id: h.airine["slozka"] ?? znama?.slozka_id,
@@ -173,7 +176,8 @@ public struct Nahlasovani: Sendable {
             bajty: data.count,
             hlavicka: h.text,
             odkazy: vazby?.odkazy,
-            odkazy_oriznuto: vazby?.oriznuto == true ? true : nil
+            odkazy_oriznuto: vazby?.oriznuto == true ? true : nil,
+            typ_navrh: typNavrh
         )
         if !zkouska {
             try kopie.zaradit(hl)

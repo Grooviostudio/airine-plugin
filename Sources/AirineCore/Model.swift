@@ -171,6 +171,9 @@ public struct Hlaseni: Codable, Hashable, Sendable, Identifiable {
     public var name: String?
     public var popis: String?
     public var typ: String?
+    /// Typ odvozený z cesty (nebo z místní kopie). Server ho použije jen
+    /// u nové karty; existující karta si typ nechá. `typ` jde jen z hlavičky.
+    public var typ_navrh: String?
     public var klient_id: String?
     public var projekt_id: String?
     public var slozka_id: String?
@@ -192,12 +195,14 @@ public struct Hlaseni: Codable, Hashable, Sendable, Identifiable {
                 klient_id: String? = nil, projekt_id: String? = nil, slozka_id: String? = nil,
                 fakta: [String: String]? = nil, nahrazuje: String? = nil, vychazi_z: [String]? = nil,
                 cesta: String? = nil, otisk: String, otisk_predchozi: String? = nil,
-                radku: Int, bajty: Int, hlavicka: String? = nil, odkazy: [Odkaz]? = nil, odkazy_oriznuto: Bool? = nil) {
+                radku: Int, bajty: Int, hlavicka: String? = nil, odkazy: [Odkaz]? = nil, odkazy_oriznuto: Bool? = nil,
+                typ_navrh: String? = nil) {
         self.id = id; self.name = name; self.popis = popis; self.typ = typ
         self.klient_id = klient_id; self.projekt_id = projekt_id; self.slozka_id = slozka_id
         self.fakta = fakta; self.nahrazuje = nahrazuje; self.vychazi_z = vychazi_z; self.cesta = cesta
         self.otisk = otisk; self.otisk_predchozi = otisk_predchozi; self.radku = radku; self.bajty = bajty
         self.hlavicka = hlavicka; self.odkazy = odkazy; self.odkazy_oriznuto = odkazy_oriznuto
+        self.typ_navrh = typ_navrh
     }
 }
 

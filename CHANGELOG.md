@@ -6,8 +6,12 @@
   popis z místní kopie, a když kartu ještě neznal, prázdný. Popis, který mezitím
   nastavil agent přes MCP nebo člověk v Revizi, tím zmizel. Popis teď jde do hlášení
   jen tehdy, když ho hlavička `airine:` opravdu má; chybějící klíč server bere jako
-  „neměnit“. Typ zůstává: hlavička, jinak typ známé karty, jinak odvozený z cesty
-  (server ho v hlášení zatím vyžaduje).
+  „neměnit“.
+- **Typ karty se hlášením bez hlavičky taky nepřepíše.** `typ` jde do hlášení jen
+  z hlavičky. Typ známé karty nebo odvozený z cesty jde jako `typ_navrh` a server ho
+  použije jen u nové karty; existující karta si typ nastavený v Airine nechá. Nový
+  plugin potřebuje server, který hlášení bez typu přijme (migrace 291 v appce);
+  starý plugin s novým serverem dál funguje.
 
 ## 8. 11. 2026
 
