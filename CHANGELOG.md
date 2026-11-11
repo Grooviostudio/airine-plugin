@@ -1,5 +1,14 @@
 # Changelog
 
+## 11. 11. 2026
+
+- **Hlášení souboru bez popisu v hlavičce popis karty nemění.** Plugin dřív posílal
+  popis z místní kopie, a když kartu ještě neznal, prázdný. Popis, který mezitím
+  nastavil agent přes MCP nebo člověk v Revizi, tím zmizel. Popis teď jde do hlášení
+  jen tehdy, když ho hlavička `airine:` opravdu má; chybějící klíč server bere jako
+  „neměnit“. Typ zůstává: hlavička, jinak typ známé karty, jinak odvozený z cesty
+  (server ho v hlášení zatím vyžaduje).
+
 ## 8. 11. 2026
 
 - **Karty ve Znalostech ukazují `precti_soubor`, ne cestu na disku.** U karty, jejíž

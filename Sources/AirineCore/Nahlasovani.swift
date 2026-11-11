@@ -141,19 +141,24 @@ public struct Nahlasovani: Sendable {
         let propojeny = try kopie.projekt(pro: url.deletingLastPathComponent().path)
         var k = h.karta(skillSouborem: skill)
         if !nase && !k.skill { k.name = nil; k.popis = nil }
-        // Co hlavička neříká: u známé karty platí, co má karta (popis, typ a vazby
+        // Co hlavička neříká: u známé karty platí, co má karta (typ a vazby
         // z Airine se novou verzí nemažou), jinak se to odvodí z cesty jako
         // u importu. Popis se nevymýšlí, karta bez popisu je v pořádku.
         let znama = znamaKarta?.bez_prava == true ? nil : znamaKarta
         let jmeno = (k.name?.isEmpty == false ? k.name : nil) ?? znama?.name ?? Self.jmenoZCesty(url.path)
         let typ = k.typ ?? znama?.typ ?? Self.typZCesty(url.path, koren: korenSlozek(url.path))
-        let popis = k.popis ?? znama?.popis ?? ""
+        // Popis jde do hlášení, jen když ho hlavička opravdu má. Chybějící klíč
+        // server bere jako „popis neměnit“; kdyby plugin poslal popis z místní
+        // kopie (nebo prázdný, když kartu ještě nezná), přepsal by popis, který
+        // mezitím nastavil agent nebo člověk v Airine.
+        let popisZHlavicky = k.popis
+        let popis = popisZHlavicky ?? znama?.popis ?? ""
         let projekt = k.projekt ?? znama?.projekt_id ?? propojeny
         let vazby = odkazy ? Odkazy.zeSouboru(obsah, url: url, koren: try kopie.koren(pro: url.path).map { URL(fileURLWithPath: $0) }) : nil
         let hl = Hlaseni(
             id: id,
             name: jmeno,
-            popis: popis,
+            popis: popisZHlavicky,
             typ: typ,
             klient_id: k.klient ?? znama?.klient_id,
             projekt_id: projekt,

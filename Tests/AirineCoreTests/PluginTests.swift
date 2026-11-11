@@ -27,6 +27,8 @@ actor MockServer: AirineAPI {
     func odeberPravo(_ id: String) { bezPrava.insert(id); zmena(id) }
     func vynutPlnou() { resetKurzoru = true }
     func pridej(_ k: Karta) { karty[k.id] = k; verze[k.id] = [k.otisk ?? ""]; zmena(k.id) }
+    /// Změna popisu v Airine (agent přes MCP, člověk v Revizi).
+    func nastavPopis(_ id: String, _ p: String) { karty[id]?.popis = p; zmena(id) }
 
     func zmena(_ id: String) { seq += 1; log.append((seq, id)) }
 
@@ -66,7 +68,7 @@ actor MockServer: AirineAPI {
         if rozpor {
             k.rozpor = true
         } else {
-            k.rozpor = nil; k.name = h.name ?? k.name; k.popis = h.popis; k.projekt_id = h.projekt_id; k.otisk = h.otisk
+            k.rozpor = nil; k.name = h.name ?? k.name; if let p = h.popis { k.popis = p }; k.projekt_id = h.projekt_id; k.otisk = h.otisk
             k.mista = [Misto(zarizeni_id: zarizeni, cesta: h.cesta, otisk: h.otisk)]; k.typ = h.typ; k.nahrazuje = h.nahrazuje
             k.fakta = h.fakta
         }
@@ -601,7 +603,7 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
         guard case .zarazeno(let id, _, let rada) = v else { Issue.record("nezařazeno: \(v)"); return }
         #expect(try String(contentsOfFile: cesta, encoding: .utf8) == telo)
         let h = try #require(try k.fronta().first?.hlaseni)
-        #expect(h.name == "zapis-schuzky" && h.typ == "zapis" && h.popis == "", "cizí description není naše")
+        #expect(h.name == "zapis-schuzky" && h.typ == "zapis" && h.popis == nil, "cizí description není naše")
         #expect(rada?.contains("bez popisu") == true && v.proAgenta == rada)
         // Druhé uložení beze změny = táž karta podle cesty, nic nového.
         #expect(try Nahlasovani(kopie: k).nahlas(cesta: cesta) == .beze_zmeny)
@@ -630,8 +632,32 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
         try "jiný text\n".write(toFile: cesta, atomically: true, encoding: .utf8)
         guard case .zarazeno(_, _, let rada) = try Nahlasovani(kopie: k).nahlas(cesta: cesta) else { Issue.record(""); return }
         let h = try #require(try k.fronta().last?.hlaseni)
-        #expect(h.popis == "Doplněno v Airine" && h.typ == "postup")
+        #expect(h.popis == nil && h.typ == "postup", "popis bez hlavičky se neposílá, server ho nechá")
         #expect(rada == nil)
+    }
+
+    /// TIK-0070: popis nastavený agentem v Airine (místní kopie ho ještě
+    /// nezná) nesmí nahlášení souboru bez hlavičky smazat.
+    @Test func popisOdAgentaPrezijeHlaseniBezHlavicky() async throws {
+        let d = try docasnyDomov(); let k = try kopie(d); let server = MockServer()
+        let cesta = try soubor(d, "scenar.md", "jen text\n")
+        guard case .zarazeno(let id, _, _) = try Nahlasovani(kopie: k).nahlas(cesta: cesta) else { Issue.record(""); return }
+        _ = try await Synchronizace(kopie: k, api: server).probehni()
+        // Agent nastaví popis v Airine; plugin se mezitím nesynchronizoval.
+        await server.nastavPopis(id, "Scénář od agenta")
+        try "jiný text\n".write(toFile: cesta, atomically: true, encoding: .utf8)
+        guard case .zarazeno = try Nahlasovani(kopie: k).nahlas(cesta: cesta) else { Issue.record(""); return }
+        #expect(try k.fronta().last?.hlaseni.popis == nil)
+        _ = try await Synchronizace(kopie: k, api: server).probehni()
+        #expect(await server.karty[id]?.popis == "Scénář od agenta")
+    }
+
+    /// Popis, který hlavička opravdu má, se pošle a změní kartu.
+    @Test func popisZHlavickySePosle() throws {
+        let d = try docasnyDomov(); let k = try kopie(d)
+        let cesta = try soubor(d, "b.md", "---\nairine:\n  name: b\n  popis: Nový popis\n---\nx\n")
+        guard case .zarazeno = try Nahlasovani(kopie: k).nahlas(cesta: cesta) else { Issue.record(""); return }
+        #expect(try k.fronta().last?.hlaseni.popis == "Nový popis")
     }
 
     @Test func typZCestyJakoImport() {
