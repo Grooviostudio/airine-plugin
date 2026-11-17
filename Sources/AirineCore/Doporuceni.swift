@@ -59,6 +59,30 @@ public struct Doporuceni: Sendable {
         let f = DateFormatter(); f.locale = Locale(identifier: "cs_CZ"); f.dateFormat = "d. M. H:mm"; return f
     }()
 
+    /// Úvod do každé session (SessionStart hook). Platí se v každém volání,
+    /// proto nanejvýš 5 karet propojeného projektu a pod 1 KB. Celý katalog
+    /// dá `co_plati` nebo `airine doporuceni`; Znalosti najde `najdi_soubory`.
+    public static let hookLimit = 1000
+
+    public func textHook(fronta: Int = 0, workspace: String? = nil) -> String {
+        var r = ["# Airine" + (workspace.map { " (workspace \($0))" } ?? "")]
+        let karty = projekt == nil ? [] : platne
+        if !karty.isEmpty {
+            r.append("Ke složce patří projekt v Airine. Nejnovější karty (celý seznam dá co_plati):")
+            for k in karty.prefix(5) {
+                r.append("- \((k.name ?? "soubor").prefix(60)): precti_soubor \(k.id)" + (k.rozpor == true ? " (⚠ rozpor verzí)" : ""))
+            }
+            if karty.count > 5 { r.append("… a dalších \(karty.count - 5)") }
+        }
+        r.append("Znalosti hledej přes najdi_soubory celou otázkou, pak precti_soubor na nejlepší shodu.")
+        if navod != nil { r.append("Firma má návod pro agenty, vypíše ho co_plati.") }
+        if fronta > 0 { r.append("Čeká na odeslání do Airine: \(fronta) hlášení.") }
+        var t = r.joined(separator: "\n")
+        // Pojistka na dlouhé jméno workspace: řeže se po celých znacích.
+        while t.utf8.count > Self.hookLimit { t.removeLast() }
+        return t
+    }
+
     /// Text pro kontext agenta. Jen karty, obsah si agent načte, až ho potřebuje
     /// (postupné odhalování). ~100 tokenů na kartu, proto jen projekt.
     /// `workspace`: jméno workspace, když jich je na Macu víc (profily).

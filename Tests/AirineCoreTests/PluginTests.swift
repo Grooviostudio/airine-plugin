@@ -707,6 +707,20 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
         #expect(Set(try Doporuceni(kopie: k, projekt: "p1").platne.map(\.id)) == ["a", "b"])
         #expect(try Doporuceni(kopie: k, projekt: "p9").platne.isEmpty)
     }
+
+    @Test func hookJeKratky() throws {
+        let k = try kopie(try docasnyDomov())
+        try k.ulozKarty((1...60).map { Karta(id: "id\($0)", name: String(repeating: "dlouhe-jmeno-", count: 10), popis: String(repeating: "popis ", count: 50), projekt_id: $0 <= 8 ? "p1" : nil) })
+        let bez = try Doporuceni(kopie: k, projekt: nil).textHook(fronta: 2)
+        #expect(bez.contains("najdi_soubory") && !bez.contains("precti_soubor id"))
+        #expect(bez.utf8.count < 1000)
+        let s = try Doporuceni(kopie: k, projekt: "p1").textHook(workspace: "Firma")
+        #expect(s.components(separatedBy: "\n- ").count - 1 == 5)
+        #expect(s.contains("a dalších 3") && !s.contains("popis"))
+        #expect(s.utf8.count < 1000)
+        // Projekt bez karet: jen věta o hledání, žádný katalog.
+        #expect(!(try Doporuceni(kopie: k, projekt: "p9").textHook().contains("precti_soubor id")))
+    }
 }
 
 /// Sdílená sada s parsujHlavicku() na serveru (lib/katalog.js): obě strany

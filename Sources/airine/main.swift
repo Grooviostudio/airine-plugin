@@ -219,7 +219,13 @@ case "doporuceni":
     }
     let projekt = vse ? nil : (try? kopie.projekt(pro: cwd)) ?? nil
     let text: String
-    do { text = try Doporuceni(kopie: kopie, projekt: projekt, zalozni: !vse).text(fronta: kopie.fronta().count, workspace: nazevWorkspace) }
+    do {
+        // Hook: krátký úvod (nanejvýš 5 karet projektu), ne celý katalog.
+        let fronta = try kopie.fronta().count
+        text = hook
+            ? try Doporuceni(kopie: kopie, projekt: projekt).textHook(fronta: fronta, workspace: nazevWorkspace)
+            : try Doporuceni(kopie: kopie, projekt: projekt, zalozni: !vse).text(fronta: fronta, workspace: nazevWorkspace)
+    }
     catch { if hook { exit(0) }; chyba("\(error)") }
     if hook {
         // SessionStart: text jde do kontextu agenta. Synchronizace běží vedle.

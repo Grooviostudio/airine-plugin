@@ -53,8 +53,11 @@ airine slozky pridej ~/Prace/FirmaB --profil firma-b
   složce (`složka patří jinému workspace`).
 - Mapa složek je v `profily.json` v domově: jen cesty, id a jména, žádný obsah ani token.
   `airine profily` ji vypíše, `airine slozka <cesta> --zrus` složku z profilu vyjme.
-- Propojený projekt, ke kterému zatím není žádná karta, hlavičku nevyprázdní: ukáže se celý
-  katalog workspace s větou proč. Propojení zruší `airine propoj --zrus`.
+- Hook na začátku sezení je krátký (pod 1 KB): bez propojení jen věta, jak hledat ve
+  Znalostech (`najdi_soubory`, pak `precti_soubor`), s propojeným projektem nanejvýš 5 jeho
+  karet (jméno a id). Celý katalog dá `co_plati` nebo `airine doporuceni`; ty u propojeného
+  projektu bez karet ukážou celý katalog workspace s větou proč. Propojení zruší
+  `airine propoj --zrus`.
 - Výchozí profil zůstává, kde byl, se stejnými jmény v Klíčence. Bez `profily.json` se nic
   nemění.
 - Lišta synchronizuje i další profily, jeden po druhém. Hlídání složek (FSEvents) běží zatím

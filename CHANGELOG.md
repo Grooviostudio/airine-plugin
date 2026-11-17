@@ -1,5 +1,13 @@
 # Changelog
 
+## 17. 11. 2026
+
+- **Krátký hook na začátku sezení.** `airine doporuceni --hook` už nevkládá celý katalog
+  (dřív ~15 KB do každé session). Bez propojeného projektu napíše jen, ať agent hledá
+  ve Znalostech přes `najdi_soubory` celou otázkou a pak `precti_soubor` na nejlepší shodu;
+  s propojeným projektem přidá nanejvýš 5 jeho karet (jméno a id). Výstup je vždy pod 1 KB.
+  `co_plati` a `airine doporuceni` bez `--hook` se nemění.
+
 ## 8. 11. 2026
 
 - **Karty ve Znalostech ukazují `precti_soubor`, ne cestu na disku.** U karty, jejíž
