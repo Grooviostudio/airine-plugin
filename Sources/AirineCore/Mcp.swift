@@ -97,7 +97,9 @@ public final class MistniMcp: @unchecked Sendable {
         guard Self.nastroje.contains(where: { $0["name"] as? String == jmeno }) else {
             throw NSError(domain: "airine", code: 1, userInfo: [NSLocalizedDescriptionKey: "neznámý nástroj \(jmeno)"])
         }
-        guard let kopie else { return Self.zamceno }
+        // Zamčená kopie je chyba nástroje (isError), ne odpověď: jako běžný
+        // výsledek ji agent bral za úspěch a soubor považoval za nahlášený.
+        guard let kopie else { throw ChybaNastroje(description: Self.zamceno) }
         switch jmeno {
         case "co_plati":
             let projekt = try (arg["projekt_id"] as? String) ?? ((arg["cesta"] as? String) ?? vychoziCesta).flatMap { try kopie.projekt(pro: $0) }
@@ -131,6 +133,8 @@ public final class MistniMcp: @unchecked Sendable {
             throw NSError(domain: "airine", code: 1, userInfo: [NSLocalizedDescriptionKey: "neznámý nástroj \(jmeno)"])
         }
     }
+
+    struct ChybaNastroje: Error, CustomStringConvertible { let description: String }
 
     /// Jak stará smí být místní kopie, než `co_plati` zkusí synchronizaci.
     static let cerstvost: TimeInterval = 300

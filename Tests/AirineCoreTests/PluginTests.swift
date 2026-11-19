@@ -391,12 +391,16 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
         let ini = try #require(await m.zpracuj(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#))
         #expect(ini.contains("airine-mistni"))
         let zam = try #require(await m.zpracuj(#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"co_plati","arguments":{}}}"#))
-        #expect(zam.contains("zamčená"))
+        #expect(zam.contains("zamčená") && zam.contains(#""isError":true"#))
+        let cesta = try soubor(d, "z.md", "---\nname: z\ndescription: d\nairine:\n  typ: brief\n---\nx\n")
+        let hl = try #require(await m.zpracuj(#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"nahlas_soubor","arguments":{"cesta":"\#(cesta)"}}}"#))
+        #expect(hl.contains("zamčená") && hl.contains(#""isError":true"#))
+        #expect(!hl.contains("Nahlášeno") && !hl.contains("Uloženo"))
         let nez = try #require(await m.zpracuj(#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"nic","arguments":{}}}"#))
         #expect(nez.contains("neznámý nástroj"))
         p.otevreno = true
         let ok = try #require(await m.zpracuj(#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"co_plati","arguments":{}}}"#))
-        #expect(!ok.contains("zamčená") && ok.contains("Airine"))
+        #expect(!ok.contains("zamčená") && ok.contains("Airine") && !ok.contains("isError"))
     }
 }
 
