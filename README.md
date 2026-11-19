@@ -1,5 +1,15 @@
 # Airine plugin
 
+**Run your business with clarity. Knowledge and data in one place, for people and AI agents.**
+
+Airine is an operating system for freelancers and small businesses. It connects knowledge (markdown files), clients, projects, time tracking, tasks, invoicing, finance and sales into one data foundation, a single source of truth for you and your AI tool. It makes sure people and their AI agents get the right data and answers. Airine builds links between the data, so they find the facts with context. Work in the app or from your own AI tool through the Airine MCP server, with Claude and ChatGPT supported. Your data stays in the EU.
+
+This repository holds the Airine plugin for Claude Code and Cursor and a small macOS menu bar app. At the start of work it tells the agent which documents and skills apply to the project in Airine, and after a change it reports MD files and skills to Airine Knowledge. It works offline too. More at [airine.eu](https://airine.eu/en).
+
+The rest of this README is in Czech.
+
+---
+
 Plugin pro Claude Code a Cursor a malá aplikace v liště macOS. Na začátku práce
 agentovi řekne, které podklady a skills k projektu v Airine platí, a MD soubory
 a skills po změně nahlásí do katalogu Airine. Funguje i bez spojení.

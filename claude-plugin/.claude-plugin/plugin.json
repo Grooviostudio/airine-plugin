@@ -1,7 +1,7 @@
 {
   "name": "airine",
   "version": "0.1.0",
-  "description": "Airine: na začátku práce doporučí, co k projektu platí, a MD soubory a skills po změně nahlásí do katalogu. Funguje i bez spojení.",
+  "description": "Airine: run your business with clarity. At the start of work it recommends what applies to the project, and after a change it reports MD files and skills to Airine Knowledge. Works offline.",
   "author": {
     "name": "Airine"
   },
