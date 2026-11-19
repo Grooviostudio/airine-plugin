@@ -13,8 +13,11 @@ public struct Misto: Codable, Hashable, Sendable {
     public var videno_at: String?
     /// Soubor na tomhle místě zmizel (`/api/katalog/mista/zmizela`).
     public var zmizelo_at: String?
-    public init(zarizeni_id: String? = nil, cesta: String? = nil, otisk: String? = nil, videno_at: String? = nil, zmizelo_at: String? = nil) {
-        self.zarizeni_id = zarizeni_id; self.cesta = cesta; self.otisk = otisk; self.videno_at = videno_at; self.zmizelo_at = zmizelo_at
+    /// Soubor někdo přesunul v Airine a na disku zatím leží tady (stará cesta).
+    /// `cesta` je už nová. Zmizí, až plugin nahlásí soubor z nové cesty.
+    public var presun_z: String?
+    public init(zarizeni_id: String? = nil, cesta: String? = nil, otisk: String? = nil, videno_at: String? = nil, zmizelo_at: String? = nil, presun_z: String? = nil) {
+        self.zarizeni_id = zarizeni_id; self.cesta = cesta; self.otisk = otisk; self.videno_at = videno_at; self.zmizelo_at = zmizelo_at; self.presun_z = presun_z
     }
 }
 

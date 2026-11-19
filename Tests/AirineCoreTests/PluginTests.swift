@@ -483,6 +483,23 @@ func soubor(_ d: Domov, _ jmeno: String, _ obsah: String) throws -> String {
         #expect(t.components(separatedBy: "jen na jednom počítači").count == 2)   // jen u lokální karty
     }
 
+    /// Přesun v Airine (migrace 359): plugin soubor nepřesune, jen doporučí.
+    @Test func doporuceniPresunVAirine() async throws {
+        let k = try kopie(try docasnyDomov())
+        let presunuta = Karta(id: "p1", name: "plan", otisk: "o1",
+                              mista: [Misto(zarizeni_id: "z1", cesta: "Klienti/Acme/plan.md", otisk: "o1", presun_z: "Firma/plan.md")])
+        let doma = Karta(id: "d1", name: "doma", otisk: "o2", mista: [Misto(zarizeni_id: "z1", cesta: "Firma/doma.md", otisk: "o2")])
+        try k.ulozKarty([presunuta, doma])
+        let t = try Doporuceni(kopie: k, projekt: nil).text()
+        #expect(t.contains("přesunuto v Airine: Firma/plan.md → Klienti/Acme/plan.md"))
+        // negativní: karta bez přesunu doporučení nemá
+        #expect(t.components(separatedBy: "přesunuto v Airine").count == 2)
+        // kanál změn pole nese, starý tvar bez něj se načte taky
+        let m = try JSONDecoder().decode(Misto.self, from: Data(#"{"cesta":"a/b.md","presun_z":"b.md"}"#.utf8))
+        #expect(m.presun_z == "b.md")
+        #expect(try JSONDecoder().decode(Misto.self, from: Data(#"{"cesta":"a/b.md"}"#.utf8)).presun_z == nil)
+    }
+
     @Test func doporuceniNahoruKartySPopisem() async throws {
         let k = try kopie(try docasnyDomov())
         var stara = Karta(id: "s", name: "styl", popis: "Obrazový styl"); stara.updated_at = "2026-10-01T00:00:00Z"

@@ -117,6 +117,11 @@ public struct Doporuceni: Sendable {
                 if k.neniVAirine { r.append("  obsah zatím není v Airine, jen karta") }
                 if let m = cesta { r.append("  \(m)") }
             }
+            // Přesun v Airine mění jen cestu v katalogu, soubor na disku plugin
+            // nepřesouvá (sám nic nepřesouvá ani nemaže). Jen to doporučí.
+            if let m = k.mista?.first(where: { $0.presun_z != nil }), let z = m.presun_z, let na = m.cesta {
+                r.append("  přesunuto v Airine: \(z) → \(na), soubor na disku přesuň stejně")
+            }
         }
         if platne.count > 40 { r.append("… a dalších \(platne.count - 40), vypíše `airine doporuceni --vse`") }
         for k in bezPrava.prefix(10) { r.append("- \(k.name ?? "soubor"): bez přístupu, požádej o něj \(k.vlastnik_jmeno ?? "vlastníka")") }
